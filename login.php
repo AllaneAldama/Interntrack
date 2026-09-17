@@ -26,6 +26,17 @@ $_SESSION['full_name'] = $user['full_name'];
 $_SESSION['email'] = $user['email'];
 $_SESSION['role'] = $user['role'];
 
-header('Location: dashboard.php');
-exit;
+if ($user['role'] === 'admin') {
+    header('Location: admin/admin-dashboard.php');
+    exit;
+} elseif ($user['role'] === 'coordinator') {
+    header('Location: coordinator/coordinator-dashboard.php');
+    exit;
+} elseif ($user['role'] === 'supervisor') {
+    header('Location: supervisor/supervisor-dashboard.php');
+    exit;
+} else {
+    header('Location: dashboard.php');
+    exit;
+}
 ?>

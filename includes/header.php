@@ -16,18 +16,26 @@ require_login();
     <div class="brand">Intern<span>Track</span></div>
     <p class="role"><?= htmlspecialchars(ucfirst($_SESSION['role'])) ?></p>
     <nav>
-        <a href="/interntrack/dashboard.php">Dashboard</a>
+        <?php if ($_SESSION['role'] === 'admin'): ?>
+            <a href="/interntrack/admin/admin-dashboard.php">Dashboard</a>
+        <?php elseif ($_SESSION['role'] === 'coordinator'): ?>
+            <a href="/interntrack/coordinator/coordinator-dashboard.php">Dashboard</a>
+        <?php elseif ($_SESSION['role'] === 'supervisor'): ?>
+            <a href="/interntrack/supervisor/supervisor-dashboard.php">Dashboard</a>
+        <?php else: ?>
+            <a href="/interntrack/dashboard.php">Dashboard</a>
+        <?php endif; ?>
         <?php if ($_SESSION['role'] === 'student'): ?>
             <a href="/interntrack/student/profile.php">Internship Profile</a>
             <a href="/interntrack/student/requirements.php">Requirements</a>
             <a href="/interntrack/student/attendance.php">Attendance</a>
             <a href="/interntrack/student/reports.php">Accomplishment Reports</a>
         <?php elseif ($_SESSION['role'] === 'coordinator'): ?>
-            <a href="#">Students</a><a href="#">Companies</a><a href="#">Assignments</a><a href="#">Reports</a>
+            <a href="/interntrack/coordinator/students.php">Students</a><a href="/interntrack/coordinator/companies.php">Companies</a><a href="/interntrack/coordinator/assignments.php">Assignments</a><a href="/interntrack/coordinator/reports.php">Reports</a>
         <?php elseif ($_SESSION['role'] === 'supervisor'): ?>
-            <a href="#">My Interns</a><a href="#">Attendance</a><a href="#">Reports</a><a href="#">Evaluations</a>
+            <a href="/interntrack/supervisor/my-interns.php">My Interns</a><a href="/interntrack/supervisor/attendance.php">Attendance</a><a href="/interntrack/supervisor/reports.php">Reports</a><a href="/interntrack/supervisor/evaluations.php">Evaluations</a>
         <?php else: ?>
-            <a href="#">Users</a><a href="#">System Reports</a><a href="#">Settings</a>
+            <a href="/interntrack/admin/users.php">Users</a><a href="/interntrack/admin/system-reports.php">System Reports</a><a href="/interntrack/admin/settings.php">Settings</a>
         <?php endif; ?>
         <a href="/interntrack/logout.php">Logout</a>
     </nav>
