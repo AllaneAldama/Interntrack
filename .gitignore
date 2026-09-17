@@ -1,0 +1,23 @@
+# XAMPP / Local files
+*.log
+*.tmp
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# PHP dependencies
+vendor/
+
+# Uploaded files
+uploads/*
+!uploads/.gitkeep
