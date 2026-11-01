@@ -4,70 +4,33 @@ require_role(['coordinator']);
 
 $page_title = 'Reports';
 
-$total_students = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM users
-    WHERE role = 'student'
-")->fetch_assoc()['total'];
+$get_count = fn(string $sql) => (int) ($conn->query($sql)?->fetch_assoc()['total'] ?? 0);
+$get_all   = fn(string $sql) => ($res = $conn->query($sql)) ? $res->fetch_all(MYSQLI_ASSOC) : [];
 
-$total_companies = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM companies
-")->fetch_assoc()['total'];
+$total_students        = $get_count("SELECT COUNT(*) AS total FROM users WHERE role = 'student'");
+$total_companies       = $get_count("SELECT COUNT(*) AS total FROM companies");
+$total_internships     = $get_count("SELECT COUNT(*) AS total FROM internships");
+$ongoing_internships   = $get_count("SELECT COUNT(*) AS total FROM internships WHERE status = 'ongoing'");
+$completed_internships = $get_count("SELECT COUNT(*) AS total FROM internships WHERE status = 'completed'");
+$pending_internships   = $get_count("SELECT COUNT(*) AS total FROM internships WHERE status = 'pending'");
+$pending_requirements  = $get_count("SELECT COUNT(*) AS total FROM requirements WHERE status = 'pending'");
+$pending_reports       = $get_count("SELECT COUNT(*) AS total FROM accomplishment_reports WHERE status = 'pending'");
 
-$total_internships = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM internships
-")->fetch_assoc()['total'];
+$stats = [
+    ['label' => 'Total Students', 'value' => $total_students, 'icon' => 'S'],
+    ['label' => 'Partner Companies', 'value' => $total_companies, 'icon' => 'C'],
+    ['label' => 'Total Internships', 'value' => $total_internships, 'icon' => 'I'],
+    ['label' => 'Ongoing Internships', 'value' => $ongoing_internships, 'icon' => 'O'],
+    ['label' => 'Completed Internships', 'value' => $completed_internships, 'icon' => 'C'],
+    ['label' => 'Pending Internships', 'value' => $pending_internships, 'icon' => 'P'],
+    ['label' => 'Pending Requirements', 'value' => $pending_requirements, 'icon' => 'R'],
+    ['label' => 'Pending Reports', 'value' => $pending_reports, 'icon' => 'A']
+];
 
-$ongoing_internships = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM internships
-    WHERE status = 'ongoing'
-")->fetch_assoc()['total'];
-
-$completed_internships = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM internships
-    WHERE status = 'completed'
-")->fetch_assoc()['total'];
-
-$pending_internships = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM internships
-    WHERE status = 'pending'
-")->fetch_assoc()['total'];
-
-$pending_requirements = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM requirements
-    WHERE status = 'pending'
-")->fetch_assoc()['total'];
-
-$pending_reports = $conn->query("
-    SELECT COUNT(*) AS total
-    FROM accomplishment_reports
-    WHERE status = 'pending'
-")->fetch_assoc()['total'];
-
-$status_summary = $conn->query("
-    SELECT
-        status,
-        COUNT(*) AS total
-    FROM internships
-    GROUP BY status
-    ORDER BY total DESC
-");
-
-$recent_internships = $conn->query("
-    SELECT
-        i.internship_id,
-        i.status,
-        i.start_date,
-        i.end_date,
-        i.created_at,
-        u.full_name AS student_name,
-        c.company_name
+$status_summary     = $get_all("SELECT status, COUNT(*) AS total FROM internships GROUP BY status ORDER BY total DESC");
+$recent_internships = $get_all("
+    SELECT i.internship_id, i.status, i.start_date, i.end_date, i.created_at,
+           u.full_name AS student_name, c.company_name
     FROM internships i
     JOIN users u ON u.user_id = i.student_id
     JOIN companies c ON c.company_id = i.company_id
@@ -79,73 +42,16 @@ require_once __DIR__ . '/../includes/header.php';
 ?>
 
 <div class="cards">
-
+<?php foreach ($stats as $stat): ?>
     <div class="stat-card">
-        <div class="stat-icon">S</div>
+        <div class="stat-icon"><?= $stat['icon'] ?></div>
         <div>
-            <span>Total Students</span>
-            <strong><?php echo $total_students; ?></strong>
+            <span><?= htmlspecialchars($stat['label']) ?></span>
+            <strong><?= $stat['value'] ?></strong>
         </div>
     </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">C</div>
-        <div>
-            <span>Partner Companies</span>
-            <strong><?php echo $total_companies; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">I</div>
-        <div>
-            <span>Total Internships</span>
-            <strong><?php echo $total_internships; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">O</div>
-        <div>
-            <span>Ongoing Internships</span>
-            <strong><?php echo $ongoing_internships; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">C</div>
-        <div>
-            <span>Completed Internships</span>
-            <strong><?php echo $completed_internships; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">P</div>
-        <div>
-            <span>Pending Internships</span>
-            <strong><?php echo $pending_internships; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">R</div>
-        <div>
-            <span>Pending Requirements</span>
-            <strong><?php echo $pending_requirements; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">A</div>
-        <div>
-            <span>Pending Reports</span>
-            <strong><?php echo $pending_reports; ?></strong>
-        </div>
-    </div>
-
+<?php endforeach; ?>
 </div>
-
 
 <div class="panel">
     <div class="panel-head">
@@ -156,35 +62,19 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="info-grid">
-
-        <?php if ($status_summary && $status_summary->num_rows > 0): ?>
-
-            <?php while ($row = $status_summary->fetch_assoc()): ?>
-
-                <div class="info-item">
-                    <span class="info-label">
-                        <?php echo ucfirst(htmlspecialchars($row['status'])); ?>
-                    </span>
-
-                    <span class="info-value">
-                        <?php echo $row['total']; ?>
-                    </span>
-                </div>
-
-            <?php endwhile; ?>
-
-        <?php else: ?>
-
-            <div class="info-item">
-                <span class="info-label">No internship records</span>
-                <span class="info-value">0</span>
-            </div>
-
-        <?php endif; ?>
-
+    <?php if ($status_summary): foreach ($status_summary as $row): ?>
+        <div class="info-item">
+            <span class="info-label"><?= ucfirst(htmlspecialchars($row['status'])) ?></span>
+            <span class="info-value"><?= $row['total'] ?></span>
+        </div>
+    <?php endforeach; else: ?>
+        <div class="info-item">
+            <span class="info-label">No internship records</span>
+            <span class="info-value">0</span>
+        </div>
+    <?php endif; ?>
     </div>
 </div>
-
 
 <div class="panel">
     <div class="panel-head">
@@ -195,7 +85,6 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="table-wrap">
-
         <table>
             <thead>
                 <tr>
@@ -207,64 +96,27 @@ require_once __DIR__ . '/../includes/header.php';
                     <th>Created</th>
                 </tr>
             </thead>
-
             <tbody>
-
-                <?php if ($recent_internships && $recent_internships->num_rows > 0): ?>
-
-                    <?php while ($row = $recent_internships->fetch_assoc()): ?>
-
-                        <tr>
-                            <td>
-                                <?php echo htmlspecialchars($row['student_name']); ?>
-                            </td>
-
-                            <td>
-                                <?php echo htmlspecialchars($row['company_name']); ?>
-                            </td>
-
-                            <td>
-                                <span class="badge badge-<?php echo htmlspecialchars($row['status']); ?>">
-                                    <?php echo ucfirst(htmlspecialchars($row['status'])); ?>
-                                </span>
-                            </td>
-
-                            <td>
-                                <?php
-                                echo !empty($row['start_date'])
-                                    ? htmlspecialchars($row['start_date'])
-                                    : '—';
-                                ?>
-                            </td>
-
-                            <td>
-                                <?php
-                                echo !empty($row['end_date'])
-                                    ? htmlspecialchars($row['end_date'])
-                                    : '—';
-                                ?>
-                            </td>
-
-                            <td>
-                                <?php echo htmlspecialchars($row['created_at']); ?>
-                            </td>
-                        </tr>
-
-                    <?php endwhile; ?>
-
-                <?php else: ?>
-
-                    <tr>
-                        <td colspan="6" style="text-align: center;">
-                            No internship records found.
-                        </td>
-                    </tr>
-
-                <?php endif; ?>
-
+            <?php if ($recent_internships): foreach ($recent_internships as $row): ?>
+                <tr>
+                    <td><?= htmlspecialchars($row['student_name']) ?></td>
+                    <td><?= htmlspecialchars($row['company_name']) ?></td>
+                    <td>
+                        <span class="badge badge-<?= htmlspecialchars($row['status']) ?>">
+                            <?= ucfirst(htmlspecialchars($row['status'])) ?>
+                        </span>
+                    </td>
+                    <td><?= !empty($row['start_date']) ? htmlspecialchars($row['start_date']) : '—' ?></td>
+                    <td><?= !empty($row['end_date']) ? htmlspecialchars($row['end_date']) : '—' ?></td>
+                    <td><?= htmlspecialchars($row['created_at']) ?></td>
+                </tr>
+            <?php endforeach; else: ?>
+                <tr>
+                    <td colspan="6" style="text-align: center;">No internship records found.</td>
+                </tr>
+            <?php endif; ?>
             </tbody>
         </table>
-
     </div>
 </div>
 
