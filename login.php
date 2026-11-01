@@ -9,8 +9,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $email = trim($_POST['email'] ?? '');
 $password = $_POST['password'] ?? '';
 
-$stmt = $conn->prepare("SELECT user_id, full_name, email, password_hash, role FROM users WHERE email = ? AND status = 'active' LIMIT 1");
-$stmt->bind_param('s', $email);
+$stmt = $conn->prepare(
+    "SELECT user_id, full_name, email, password_hash, role
+     FROM users
+     WHERE (username = ? OR email = ?)
+     AND status = 'active'
+     LIMIT 1"
+);
+
+$stmt->bind_param("ss", $email, $email);
 $stmt->execute();
 $result = $stmt->get_result();
 $user = $result->fetch_assoc();
