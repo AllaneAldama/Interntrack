@@ -173,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($verify_stmt->affected_rows !== 1) {
             $attendance_action_error = 'This record is not ready for verification or is not assigned to you.';
         } else {
+            log_activity($conn, $supervisor_id, 'Verified attendance record #' . $attendance_id . ' (' . $decision . ')');
             $_SESSION['attendance_review_notice'] = 'Attendance verification saved.';
             header('Location: attendance.php');
             exit;
@@ -184,10 +185,8 @@ $search = trim($_GET['search'] ?? '');
 $status = trim($_GET['status'] ?? '');
 $date = trim($_GET['date'] ?? '');
 
-$total_records = 0;
-$present_records = 0;
-$absent_records = 0;
-$total_hours = 0;
+$present_today = 0;
+$absent_today = 0;
 
 $attendance_records = [];
 
@@ -210,78 +209,22 @@ if ($attendance_ready) {
         ";
     }
 
-    $where_summary = "i.supervisor_id = {$supervisor_id}";
-
-    $summary_sql = "
-        SELECT
-            COUNT(*) AS total_records
-        FROM attendance a
-        {$attendance_link}
-        WHERE {$where_summary}
-    ";
-
-    $summary_result = $conn->query($summary_sql);
-
-    if ($summary_result) {
-        $summary = $summary_result->fetch_assoc();
-
-        $total_records = (int) ($summary['total_records'] ?? 0);
-    }
-
-    if ($status_column !== null) {
-
-        $present_sql = "
-            SELECT COUNT(*) AS total
+    if ($status_column !== null && $date_column !== null) {
+        $today = $conn->real_escape_string(date('Y-m-d'));
+        $today_summary_sql = "
+            SELECT
+                SUM(LOWER(a.`{$status_column}`) = 'present') AS present_today,
+                SUM(LOWER(a.`{$status_column}`) = 'absent') AS absent_today
             FROM attendance a
             {$attendance_link}
             WHERE i.supervisor_id = {$supervisor_id}
-            AND LOWER(a.`{$status_column}`) = 'present'
+                AND DATE(a.`{$date_column}`) = '{$today}'
         ";
-
-        $present_result = $conn->query($present_sql);
-
-        if ($present_result) {
-            $present_records = (int) (
-                $present_result->fetch_assoc()['total'] ?? 0
-            );
-        }
-
-        $absent_sql = "
-            SELECT COUNT(*) AS total
-            FROM attendance a
-            {$attendance_link}
-            WHERE i.supervisor_id = {$supervisor_id}
-            AND LOWER(a.`{$status_column}`) = 'absent'
-        ";
-
-        $absent_result = $conn->query($absent_sql);
-
-        if ($absent_result) {
-            $absent_records = (int) (
-                $absent_result->fetch_assoc()['total'] ?? 0
-            );
-        }
-    }
-
-    if ($hours_column !== null) {
-
-        $hours_sql = "
-            SELECT COALESCE(SUM(a.`{$hours_column}`), 0) AS total_hours
-            FROM attendance a
-            {$attendance_link}
-            WHERE i.supervisor_id = {$supervisor_id}
-        ";
-
-        if ($status_column !== null) {
-            $hours_sql .= " AND LOWER(a.`{$status_column}`) IN ('present', 'late')";
-        }
-
-        $hours_result = $conn->query($hours_sql);
-
-        if ($hours_result) {
-            $total_hours = (float) (
-                $hours_result->fetch_assoc()['total_hours'] ?? 0
-            );
+        $today_summary_result = $conn->query($today_summary_sql);
+        if ($today_summary_result) {
+            $today_summary = $today_summary_result->fetch_assoc();
+            $present_today = (int) ($today_summary['present_today'] ?? 0);
+            $absent_today = (int) ($today_summary['absent_today'] ?? 0);
         }
     }
 
@@ -479,65 +422,24 @@ require_once __DIR__ . '/../includes/header.php';
     <?php if ($attendance_notice !== ''): ?><div class="alert success"><?= htmlspecialchars($attendance_notice) ?></div><?php endif; ?>
     <?php if ($attendance_action_error !== ''): ?><div class="alert"><?= htmlspecialchars($attendance_action_error) ?></div><?php endif; ?>
 
-    <div class="cards">
-
-        <div class="stat-card">
-            <div class="stat-icon">A</div>
-
-            <div>
-                <span>Attendance Records</span>
-                <strong><?php echo $total_records; ?></strong>
-            </div>
-        </div>
-
-
-        <div class="stat-card">
-            <div class="stat-icon">P</div>
-
-            <div>
-                <span>Present</span>
-                <strong><?php echo $present_records; ?></strong>
-            </div>
-        </div>
-
-
-        <div class="stat-card">
-            <div class="stat-icon">X</div>
-
-            <div>
-                <span>Absent</span>
-                <strong><?php echo $absent_records; ?></strong>
-            </div>
-        </div>
-
-
-        <div class="stat-card">
-            <div class="stat-icon">H</div>
-
-            <div>
-                <span>Hours Rendered</span>
-                <strong><?php echo $total_hours; ?></strong>
-            </div>
-        </div>
-
-    </div>
-
-
     <div class="panel">
 
         <div class="panel-head">
 
             <div>
-                <h2>Attendance Monitoring</h2>
+                <h2>Today's Attendance Overview</h2>
 
                 <p>
-                    Review attendance records and rendered hours
-                    for your assigned interns.
+                    Present and absent attendance records dated <?= htmlspecialchars(format_system_date(date('Y-m-d'), $system_settings)) ?>.
                 </p>
             </div>
 
         </div>
 
+        <div class="cards">
+            <div class="stat-card"><div class="stat-icon">P</div><div><span>Present Today</span><strong><?= $present_today ?></strong></div></div>
+            <div class="stat-card"><div class="stat-icon">A</div><div><span>Absent Today</span><strong><?= $absent_today ?></strong></div></div>
+        </div>
 
         <form method="GET" class="filter-form">
 

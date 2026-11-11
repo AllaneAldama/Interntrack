@@ -75,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $save_stmt->bind_param('sii', $relative_path, $requirement_id, $requirement['internship_id']);
                     $save_stmt->execute();
                     if ($save_stmt->affected_rows === 1) {
+                        log_activity($conn, $student_id, 'Submitted internship requirement #' . $requirement_id);
                         $_SESSION['requirement_notice'] = 'Your document was submitted for review.';
                         header('Location: requirements.php');
                         exit;

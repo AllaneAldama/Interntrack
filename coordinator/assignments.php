@@ -68,19 +68,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $active_only = $action === 'create' ? " AND status = 'active'" : '';
         $student_check = $conn->prepare("SELECT user_id FROM users WHERE user_id = ? AND role = 'student'{$active_only}");
         $student_check->bind_param('i', $student_id);
-        $student_check->execute();
+        if (!$student_check->execute()) {
+            throw new RuntimeException('Could not validate the selected student.');
+        }
+        $valid_student = (bool) $student_check->get_result()->fetch_assoc();
+
         $company_check = $conn->prepare("SELECT company_id FROM companies WHERE company_id = ?{$active_only}");
         $company_check->bind_param('i', $company_id);
-        $company_check->execute();
+        if (!$company_check->execute()) {
+            throw new RuntimeException('Could not validate the selected company.');
+        }
+        $valid_company = (bool) $company_check->get_result()->fetch_assoc();
+
         $valid_supervisor = true;
         if ($supervisor_id !== null) {
             $supervisor_check = $conn->prepare("SELECT user_id FROM users WHERE user_id = ? AND role = 'supervisor'{$active_only}");
             $supervisor_check->bind_param('i', $supervisor_id);
-            $supervisor_check->execute();
+            if (!$supervisor_check->execute()) {
+                throw new RuntimeException('Could not validate the selected supervisor.');
+            }
             $valid_supervisor = (bool) $supervisor_check->get_result()->fetch_assoc();
         }
 
-        if (!$student_check->get_result()->fetch_assoc() || !$company_check->get_result()->fetch_assoc() || !$valid_supervisor) {
+        if (!$valid_student || !$valid_company || !$valid_supervisor) {
             $action_error = 'Choose an active student, company, and supervisor.';
         } else {
             if ($action === 'create') {
@@ -102,6 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $coordinator_id = (int) $_SESSION['user_id'];
                     $create_stmt->bind_param('iiiissis', $student_id, $company_id, $supervisor_id, $coordinator_id, $start_date, $end_date, $required_hours, $status_value);
                     if ($create_stmt->execute()) {
+                        log_activity($conn, (int) $_SESSION['user_id'], 'Created internship assignment #' . $create_stmt->insert_id);
                         $_SESSION['assignment_action_notice'] = 'Internship assignment created.';
                         header('Location: assignments.php');
                         exit;
@@ -131,6 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ");
                     $update_stmt->bind_param('iiissisi', $student_id, $company_id, $supervisor_id, $start_date, $end_date, $required_hours, $status_value, $internship_id);
                     if ($update_stmt->execute()) {
+                        log_activity($conn, (int) $_SESSION['user_id'], 'Updated internship assignment #' . $internship_id);
                         $_SESSION['assignment_action_notice'] = 'Internship assignment updated.';
                         header('Location: assignments.php');
                         exit;
@@ -443,8 +455,8 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
 
 
-        <div class="assignment-badge">
-            Coordinator View
+        <div>
+            <button class="btn primary" type="button" data-modal-target="create-assignment-modal">Assign a student</button>
         </div>
 
     </div>
@@ -452,9 +464,10 @@ require_once __DIR__ . '/../includes/header.php';
     <?php if ($action_notice !== ''): ?><div class="alert success"><?= htmlspecialchars($action_notice) ?></div><?php endif; ?>
     <?php if ($action_error !== ''): ?><div class="alert"><?= htmlspecialchars($action_error) ?></div><?php endif; ?>
 
-    <details class="crud-editor" open>
-        <summary>Create internship assignment</summary>
-        <br>
+    
+    <dialog class="modal-dialog" id="create-assignment-modal">
+        <div class="modal-content">
+        <div class="modal-header"><h2>Create internship assignment</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
         <form method="POST" class="crud-form">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
             <input type="hidden" name="action" value="create">
@@ -465,10 +478,12 @@ require_once __DIR__ . '/../includes/header.php';
             <label>End date<input type="date" name="end_date"></label>
             <label>Required hours<input type="number" name="required_hours" min="1" max="100000" required></label>
             <label>Status<select name="assignment_status"><option value="pending">Pending</option><option value="ongoing">Ongoing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
-            <button class="btn primary" type="submit" style="margin-top: 10px;">Create assignment</button>
+            <br>
+            <button class="btn primary" type="submit">Create assignment</button>
         </form>
-    </details>
-    <br>
+        </div>
+    </dialog>
+
     <form
         method="GET"
         class="filter-form"
@@ -620,14 +635,7 @@ require_once __DIR__ . '/../includes/header.php';
 
                             <?php if ($assignment['start_date']): ?>
 
-                                <?= htmlspecialchars(
-                                    date(
-                                        'M d, Y',
-                                        strtotime(
-                                            $assignment['start_date']
-                                        )
-                                    )
-                                ) ?>
+                                <?= htmlspecialchars(format_system_date($assignment['start_date'], $system_settings)) ?>
 
                             <?php else: ?>
 
@@ -642,14 +650,7 @@ require_once __DIR__ . '/../includes/header.php';
 
                             <?php if ($assignment['end_date']): ?>
 
-                                <?= htmlspecialchars(
-                                    date(
-                                        'M d, Y',
-                                        strtotime(
-                                            $assignment['end_date']
-                                        )
-                                    )
-                                ) ?>
+                                <?= htmlspecialchars(format_system_date($assignment['end_date'], $system_settings)) ?>
 
                             <?php else: ?>
 
@@ -662,20 +663,15 @@ require_once __DIR__ . '/../includes/header.php';
 
                         <td>
 
-                            <?= htmlspecialchars(
-                                date(
-                                    'M d, Y',
-                                    strtotime(
-                                        $assignment['created_at']
-                                    )
-                                )
-                            ) ?>
+                            <?= htmlspecialchars(format_system_date($assignment['created_at'], $system_settings)) ?>
 
                         </td>
 
                         <td>
-                            <details class="crud-editor">
-                                <summary>Edit</summary>
+                            <button class="btn secondary" type="button" data-modal-target="edit-assignment-<?= (int) $assignment['internship_id'] ?>">Edit</button>
+                            <dialog class="modal-dialog" id="edit-assignment-<?= (int) $assignment['internship_id'] ?>">
+                                <div class="modal-content">
+                                <div class="modal-header"><h2>Edit internship assignment</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
                                 <form method="POST" class="crud-form stacked">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="update">
@@ -689,7 +685,8 @@ require_once __DIR__ . '/../includes/header.php';
                                     <label>Status<select name="assignment_status"><?php foreach ($allowed_statuses as $option_status): ?><option value="<?= $option_status ?>" <?= $assignment['status'] === $option_status ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($option_status)) ?></option><?php endforeach; ?></select></label>
                                     <button class="btn primary" type="submit">Save changes</button>
                                 </form>
-                            </details>
+                                </div>
+                            </dialog>
                         </td>
 
                     </tr>

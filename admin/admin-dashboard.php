@@ -2,312 +2,206 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_role(['admin']);
 
-$page_title = 'Admin Dashboard';
+$page_title = 'Dashboard';
 
-function fetch_count(mysqli $conn, string $sql): int
-{
-    $result = $conn->query($sql);
+$counts_result = $conn->query("
+    SELECT
+        (SELECT COUNT(*) FROM users) AS total_users,
+        (SELECT COUNT(*) FROM users WHERE status = 'active') AS active_users,
+        (SELECT COUNT(*) FROM users WHERE status = 'inactive') AS inactive_users,
+        (SELECT COUNT(*) FROM companies) AS total_companies
+");
+$counts = $counts_result->fetch_assoc();
 
-    if (!$result) {
-        return 0;
-    }
-
-    $row = $result->fetch_row();
-    return (int) ($row[0] ?? 0);
-}
-
-$total_users = fetch_count($conn, "SELECT COUNT(*) FROM users");
-$active_users = fetch_count($conn, "SELECT COUNT(*) FROM users WHERE status='active'");
-$active_internships = fetch_count($conn, "SELECT COUNT(*) FROM internships WHERE status='ongoing'");
-$partner_companies = fetch_count($conn, "SELECT COUNT(*) FROM companies WHERE status='active'");
-$pending_requirements = fetch_count($conn, "SELECT COUNT(*) FROM requirements WHERE status='pending'");
-$pending_reports = fetch_count($conn, "SELECT COUNT(*) FROM accomplishment_reports WHERE status='submitted'");
-
-$user_roles = [
+$user_analytics = [
     'student' => 0,
     'coordinator' => 0,
     'supervisor' => 0,
     'admin' => 0
 ];
-
-$role_result = $conn->query("SELECT role, COUNT(*) AS total FROM users GROUP BY role");
-if ($role_result) {
-    while ($row = $role_result->fetch_assoc()) {
-        if (array_key_exists($row['role'], $user_roles)) {
-            $user_roles[$row['role']] = (int) $row['total'];
-        }
+$user_result = $conn->query("
+    SELECT role, COUNT(*) AS total
+    FROM users
+    GROUP BY role
+");
+while ($row = $user_result->fetch_assoc()) {
+    if (array_key_exists($row['role'], $user_analytics)) {
+        $user_analytics[$row['role']] = (int) $row['total'];
     }
 }
 
-$internship_statuses = [
-    'pending' => 0,
-    'ongoing' => 0,
-    'completed' => 0,
-    'cancelled' => 0
-];
-
-$status_result = $conn->query("SELECT status, COUNT(*) AS total FROM internships GROUP BY status");
-if ($status_result) {
-    while ($row = $status_result->fetch_assoc()) {
-        if (array_key_exists($row['status'], $internship_statuses)) {
-            $internship_statuses[$row['status']] = (int) $row['total'];
-        }
-    }
-}
-
-$recent_users = [];
-$users_result = $conn->query(
-    "SELECT full_name, email, role, status, created_at
-     FROM users
-     ORDER BY created_at DESC
-     LIMIT 6"
-);
-
-if ($users_result) {
-    while ($row = $users_result->fetch_assoc()) {
-        $recent_users[] = $row;
-    }
-}
-
-$recent_internships = [];
-$internships_result = $conn->query(
-    "SELECT u.full_name, c.company_name, i.status, i.start_date, i.end_date
-     FROM internships i
-     JOIN users u ON u.user_id = i.student_id
-     JOIN companies c ON c.company_id = i.company_id
-     ORDER BY i.created_at DESC
-     LIMIT 6"
-);
-
-if ($internships_result) {
-    while ($row = $internships_result->fetch_assoc()) {
-        $recent_internships[] = $row;
+$company_analytics = ['active' => 0, 'inactive' => 0];
+$company_result = $conn->query("
+    SELECT status, COUNT(*) AS total
+    FROM companies
+    GROUP BY status
+");
+while ($row = $company_result->fetch_assoc()) {
+    if (array_key_exists($row['status'], $company_analytics)) {
+        $company_analytics[$row['status']] = (int) $row['total'];
     }
 }
 
 $recent_activity = [];
-$activity_result = $conn->query(
-    "SELECT COALESCE(u.full_name, 'System') AS full_name,
-            al.action,
-            al.created_at
-     FROM activity_logs al
-     LEFT JOIN users u ON u.user_id = al.user_id
-     ORDER BY al.created_at DESC
-     LIMIT 6"
-);
-
-if ($activity_result) {
-    while ($row = $activity_result->fetch_assoc()) {
-        $recent_activity[] = $row;
-    }
+$activity_result = $conn->query("
+    SELECT COALESCE(u.full_name, 'System') AS full_name,
+        al.action, al.created_at
+    FROM activity_logs al
+    LEFT JOIN users u ON u.user_id = al.user_id
+    ORDER BY al.created_at DESC, al.log_id DESC
+    LIMIT 12
+");
+while ($row = $activity_result->fetch_assoc()) {
+    $recent_activity[] = $row;
 }
+
+$database_check = $conn->query('SELECT 1 AS available');
+$database_available = (int) $database_check->fetch_assoc()['available'] === 1;
+$activity_logging_status = $activity_result !== false ? 'Available' : 'Unavailable';
+$max_users = max($user_analytics) ?: 1;
+$max_companies = max($company_analytics) ?: 1;
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="cards">
-    <div class="stat-card">
-        <div class="stat-icon">◉</div>
-        <div>
-            <span>Total Users</span>
-            <strong><?= $total_users ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">●</div>
-        <div>
-            <span>Active Internships</span>
-            <strong><?= $active_internships ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">▣</div>
-        <div>
-            <span>Partner Companies</span>
-            <strong><?= $partner_companies ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">!</div>
-        <div>
-            <span>Pending Reviews</span>
-            <strong><?= $pending_requirements + $pending_reports ?></strong>
-        </div>
-    </div>
-</div>
-
-<section class="panel">
+<section class="panel admin-overview">
     <div class="panel-head">
         <div>
             <h2>Admin Overview</h2>
-            <p>Monitor users, internships, companies, and pending system activity.</p>
+            <p>Current user and partner-company totals.</p>
         </div>
     </div>
 
+    <div class="cards">
+        <div class="stat-card">
+            <div class="stat-icon">U</div>
+            <div><span>Total Users</span><strong><?= (int) $counts['total_users'] ?></strong></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">A</div>
+            <div><span>Active Users</span><strong><?= (int) $counts['active_users'] ?></strong></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">I</div>
+            <div><span>Inactive Users</span><strong><?= (int) $counts['inactive_users'] ?></strong></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">C</div>
+            <div><span>Partner Companies</span><strong><?= (int) $counts['total_companies'] ?></strong></div>
+        </div>
+    </div>
+</section>
+
+<section class="panel admin-monitoring">
+    <div class="panel-head">
+        <div>
+            <h2>System Monitoring</h2>
+            <p>Live status checks from the current application request.</p>
+        </div>
+    </div>
     <div class="info-grid">
         <div>
-            <small>Active Users</small>
-            <strong><?= $active_users ?></strong>
+            <small>Database connection</small>
+            <strong><span class="monitor-dot <?= $database_available ? 'online' : 'offline' ?>"></span><?= $database_available ? 'Connected' : 'Unavailable' ?></strong>
         </div>
         <div>
-            <small>Students</small>
-            <strong><?= $user_roles['student'] ?></strong>
+            <small>Activity logging</small>
+            <strong><span class="monitor-dot <?= $activity_logging_status === 'Available' ? 'online' : 'offline' ?>"></span><?= htmlspecialchars($activity_logging_status) ?></strong>
         </div>
         <div>
-            <small>Coordinators</small>
-            <strong><?= $user_roles['coordinator'] ?></strong>
+            <small>PHP runtime</small>
+            <strong><?= htmlspecialchars(PHP_VERSION) ?></strong>
         </div>
         <div>
-            <small>Supervisors</small>
-            <strong><?= $user_roles['supervisor'] ?></strong>
+            <small>Server time</small>
+            <strong><?= htmlspecialchars(format_system_datetime(date('Y-m-d H:i:s'), $system_settings)) ?></strong>
         </div>
     </div>
 </section>
 
-<section class="panel" style="margin-top:24px;">
-    <div class="panel-head">
-        <div>
-            <h2>Recent Users</h2>
-            <p>Latest accounts registered in InternTrack.</p>
+<section class="analytics-grid">
+    <div class="panel analytics-panel">
+        <div class="panel-head">
+            <div><h2>User Analytics</h2><p>Accounts by role.</p></div>
+        </div>
+        <div class="analytics-bars" role="img" aria-label="User account counts by role">
+            <?php foreach ($user_analytics as $role => $total): ?>
+                <div class="analytics-row">
+                    <div class="analytics-label">
+                        <span><?= htmlspecialchars(ucfirst($role)) ?></span>
+                        <strong><?= $total ?></strong>
+                    </div>
+                    <div class="analytics-track">
+                        <span class="analytics-bar users-bar" style="width: <?= $total === 0 ? 0 : max(3, (int) round($total / $max_users * 100)) ?>%"></span>
+                    </div>
+                </div>
+            <?php endforeach; ?>
         </div>
     </div>
 
+    <div class="panel analytics-panel">
+        <div class="panel-head">
+            <div><h2>Partner Company Analytics</h2><p>Partner companies by account status.</p></div>
+        </div>
+        <div class="analytics-bars" role="img" aria-label="Partner company counts by status">
+            <?php foreach ($company_analytics as $status => $total): ?>
+                <div class="analytics-row">
+                    <div class="analytics-label">
+                        <span><?= htmlspecialchars(ucfirst($status)) ?></span>
+                        <strong><?= $total ?></strong>
+                    </div>
+                    <div class="analytics-track">
+                        <span class="analytics-bar companies-bar" style="width: <?= $total === 0 ? 0 : max(3, (int) round($total / $max_companies * 100)) ?>%"></span>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</section>
+
+<section class="panel admin-activity">
+    <div class="panel-head">
+        <div><h2>Activity Log</h2><p>Latest sign-ins, sign-outs, and account or OJT workflow changes.</p></div>
+    </div>
     <div class="table-wrap">
         <table>
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                </tr>
-            </thead>
+            <thead><tr><th>User</th><th>Activity</th><th>Date and time</th></tr></thead>
             <tbody>
-            <?php if ($recent_users): ?>
-                <?php foreach ($recent_users as $user): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($user['full_name']) ?></td>
-                        <td><?= htmlspecialchars($user['email']) ?></td>
-                        <td><?= htmlspecialchars(ucfirst($user['role'])) ?></td>
-                        <td>
-                            <span class="badge <?= $user['status'] === 'active' ? 'approved' : 'rejected' ?>">
-                                <?= htmlspecialchars(ucfirst($user['status'])) ?>
-                            </span>
-                        </td>
-                        <td><?= htmlspecialchars(date('M d, Y', strtotime($user['created_at']))) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <tr>
-                    <td colspan="5" class="empty-state">No users found.</td>
-                </tr>
-            <?php endif; ?>
+                <?php if ($recent_activity): ?>
+                    <?php foreach ($recent_activity as $activity): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($activity['full_name']) ?></td>
+                            <td><?= htmlspecialchars($activity['action']) ?></td>
+                            <td><?= htmlspecialchars(format_system_datetime($activity['created_at'], $system_settings)) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <tr><td colspan="3" class="empty-state">No activities have been logged yet.</td></tr>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>
 </section>
 
-<section class="panel" style="margin-top:24px;">
-    <div class="panel-head">
-        <div>
-            <h2>Internship Monitoring</h2>
-            <p>Current internship records across the system.</p>
-        </div>
-    </div>
-
-    <div class="info-grid">
-        <div>
-            <small>Pending</small>
-            <strong><?= $internship_statuses['pending'] ?></strong>
-        </div>
-        <div>
-            <small>Ongoing</small>
-            <strong><?= $internship_statuses['ongoing'] ?></strong>
-        </div>
-        <div>
-            <small>Completed</small>
-            <strong><?= $internship_statuses['completed'] ?></strong>
-        </div>
-        <div>
-            <small>Cancelled</small>
-            <strong><?= $internship_statuses['cancelled'] ?></strong>
-        </div>
-    </div>
-
-    <div class="table-wrap" style="margin-top:20px;">
-        <table>
-            <thead>
-                <tr>
-                    <th>Student</th>
-                    <th>Company</th>
-                    <th>Status</th>
-                    <th>Start</th>
-                    <th>End</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php if ($recent_internships): ?>
-                <?php foreach ($recent_internships as $internship): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($internship['full_name']) ?></td>
-                        <td><?= htmlspecialchars($internship['company_name']) ?></td>
-                        <td>
-                            <span class="badge <?= $internship['status'] === 'completed' ? 'approved' : ($internship['status'] === 'cancelled' ? 'rejected' : '') ?>">
-                                <?= htmlspecialchars(ucfirst($internship['status'])) ?>
-                            </span>
-                        </td>
-                        <td><?= $internship['start_date'] ? htmlspecialchars(date('M d, Y', strtotime($internship['start_date']))) : '—' ?></td>
-                        <td><?= $internship['end_date'] ? htmlspecialchars(date('M d, Y', strtotime($internship['end_date']))) : '—' ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <tr>
-                    <td colspan="5" class="empty-state">No internship records found.</td>
-                </tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-</section>
-
-<section class="panel" style="margin-top:24px;">
-    <div class="panel-head">
-        <div>
-            <h2>Recent Activity</h2>
-            <p>Latest actions recorded by the system.</p>
-        </div>
-    </div>
-
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Date</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php if ($recent_activity): ?>
-                <?php foreach ($recent_activity as $activity): ?>
-                    <tr>
-                        <td><?= htmlspecialchars($activity['full_name']) ?></td>
-                        <td><?= htmlspecialchars($activity['action']) ?></td>
-                        <td><?= htmlspecialchars(date('M d, Y h:i A', strtotime($activity['created_at']))) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <tr>
-                    <td colspan="3" class="empty-state">No activity logs found yet.</td>
-                </tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-</section>
+<style>
+.admin-overview .cards{margin-bottom:0}
+.admin-overview .panel-head{margin-bottom:18px}
+.admin-monitoring{margin-top:24px}
+.monitor-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px}
+.monitor-dot.online{background:#20a464}
+.monitor-dot.offline{background:#b42318}
+.analytics-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:24px}
+.analytics-panel{min-width:0}
+.analytics-bars{display:grid;gap:18px}
+.analytics-row{display:grid;gap:8px}
+.analytics-label{display:flex;justify-content:space-between;font-size:14px}
+.analytics-label span{color:#596579}
+.analytics-track{height:12px;border-radius:99px;background:#eef1f6;overflow:hidden}
+.analytics-bar{display:block;height:100%;border-radius:99px;background:#3677ed;min-width:0}
+.companies-bar{background:#20a464}
+.admin-activity{margin-top:24px}
+@media(max-width:900px){.admin-overview .cards{grid-template-columns:repeat(2,1fr)}.analytics-grid{grid-template-columns:1fr}}
+@media(max-width:650px){.admin-overview .cards{grid-template-columns:1fr}}
+</style>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

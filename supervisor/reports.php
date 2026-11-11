@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_role(['supervisor']);
 
-$page_title = 'Reports';
+$page_title = 'Intern Reports';
 
 $supervisor_id = (int) ($_SESSION['user_id'] ?? 0);
 
@@ -31,11 +31,6 @@ if ($table_check && $table_check->num_rows > 0) {
 
 $search = trim($_GET['search'] ?? '');
 $status = trim($_GET['status'] ?? '');
-
-$total_reports = 0;
-$submitted_reports = 0;
-$reviewed_reports = 0;
-$rejected_reports = 0;
 
 $reports = [];
 
@@ -82,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($review_stmt->affected_rows !== 1) {
             $review_error = 'This report is unavailable, has already been reviewed, or is not assigned to you.';
         } else {
+            log_activity($conn, $supervisor_id, 'Reviewed accomplishment report #' . $report_id . ' (' . $decision . ')');
             $_SESSION['report_review_notice'] = 'The report review was saved.';
             header('Location: reports.php');
             exit;
@@ -91,52 +87,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
 if ($reports_ready) {
-
-    $summary_result = $conn->query("
-    SELECT
-        COUNT(*) AS total_reports,
-
-        SUM(
-            CASE
-                WHEN ar.status = 'submitted'
-                THEN 1
-                ELSE 0
-            END
-        ) AS submitted_reports,
-
-        SUM(
-            CASE
-                WHEN ar.status = 'reviewed'
-                THEN 1
-                ELSE 0
-            END
-        ) AS reviewed_reports,
-
-        SUM(
-            CASE
-                WHEN ar.status = 'rejected'
-                THEN 1
-                ELSE 0
-            END
-        ) AS rejected_reports
-
-    FROM accomplishment_reports ar
-
-    JOIN internships i
-        ON i.internship_id = ar.internship_id
-
-    WHERE i.supervisor_id = {$supervisor_id}
-");
-
-    if ($summary_result) {
-
-        $summary = $summary_result->fetch_assoc();
-
-        $total_reports = (int) ($summary['total_reports'] ?? 0);
-        $submitted_reports = (int) ($summary['submitted_reports'] ?? 0);
-        $reviewed_reports = (int) ($summary['reviewed_reports'] ?? 0);
-        $rejected_reports = (int) ($summary['rejected_reports'] ?? 0);
-    }
 
     $conditions = [
         "i.supervisor_id = {$supervisor_id}"
@@ -281,46 +231,6 @@ require_once __DIR__ . '/../includes/header.php';
 
 
 <?php else: ?>
-
-
-    <div class="cards">
-
-        <div class="stat-card">
-            <div class="stat-icon">R</div>
-            <div>
-                <span>Total Reports</span>
-                <strong><?php echo $total_reports; ?></strong>
-            </div>
-        </div>
-
-
-        <div class="stat-card">
-            <div class="stat-icon">S</div>
-            <div>
-                <span>Submitted</span>
-                <strong><?php echo $submitted_reports; ?></strong>
-            </div>
-        </div>
-
-
-        <div class="stat-card">
-            <div class="stat-icon">V</div>
-            <div>
-                <span>Reviewed</span>
-                <strong><?php echo $reviewed_reports; ?></strong>
-            </div>
-        </div>
-
-
-        <div class="stat-card">
-            <div class="stat-icon">X</div>
-            <div>
-                <span>Rejected</span>
-                <strong><?php echo $rejected_reports; ?></strong>
-            </div>
-        </div>
-
-    </div>
 
 
     <div class="panel">
@@ -502,14 +412,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td>
                                     <?php
                                     echo !empty($report['submitted_at'])
-                                        ? htmlspecialchars(
-                                            date(
-                                                'M d, Y h:i A',
-                                                strtotime(
-                                                    $report['submitted_at']
-                                                )
-                                            )
-                                        )
+                                        ? htmlspecialchars(format_system_datetime($report['submitted_at'], $system_settings))
                                         : '—';
                                     ?>
                                 </td>
@@ -518,14 +421,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td>
                                     <?php
                                     echo !empty($report['reviewed_at'])
-                                        ? htmlspecialchars(
-                                            date(
-                                                'M d, Y h:i A',
-                                                strtotime(
-                                                    $report['reviewed_at']
-                                                )
-                                            )
-                                        )
+                                        ? htmlspecialchars(format_system_datetime($report['reviewed_at'], $system_settings))
                                         : '—';
                                     ?>
                                 </td>

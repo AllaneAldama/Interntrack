@@ -108,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($revision_update->affected_rows !== 1) {
                 $error = 'The report could not be resubmitted. Refresh the page and try again.';
             } else {
+                log_activity($conn, $student_id, 'Resubmitted accomplishment report for week ' . $week_number);
                 $_SESSION['report_notice'] = 'Your revised accomplishment report was submitted.';
                 header('Location: reports.php');
                 exit;
@@ -127,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $insert_stmt->execute();
 
+            log_activity($conn, $student_id, 'Submitted accomplishment report for week ' . $week_number);
             $_SESSION['report_notice'] = 'Your accomplishment report was submitted.';
             header('Location: reports.php');
             exit;

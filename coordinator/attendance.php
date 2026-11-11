@@ -75,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ");
                 $create_stmt->bind_param('isssdsi', $internship_id, $date, $time_in, $time_out, $hours, $status, $verified_by);
                 if ($create_stmt->execute()) {
+                    log_activity($conn, $coordinator_id, 'Created attendance record #' . $create_stmt->insert_id);
                     $_SESSION['coordinator_attendance_notice'] = 'Attendance record created.';
                     header('Location: attendance.php');
                     exit;
@@ -93,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $update_stmt->bind_param('sssdsiii', $date, $time_in, $time_out, $hours, $status, $verified_by, $attendance_id, $coordinator_id);
             if ($update_stmt->execute()) {
+                log_activity($conn, $coordinator_id, 'Updated attendance record #' . $attendance_id);
                 $_SESSION['coordinator_attendance_notice'] = 'Attendance record updated.';
                 header('Location: attendance.php');
                 exit;
@@ -119,14 +121,15 @@ $records = $records_stmt->get_result();
 require_once __DIR__ . '/../includes/header.php';
 ?>
 <section class="panel">
-    <div class="panel-head"><div><h2>Manage Attendance</h2><p>Create or correct attendance records for your assigned internships.</p></div></div>
+    <div class="panel-head"><div><h2>Manage Attendance</h2><p>Create or correct attendance records for your assigned internships.</p></div><div><button class="btn primary" type="button" data-modal-target="create-attendance-modal">Record attendance</button></div></div>
     <?php if ($notice !== ''): ?><div class="alert success"><?= htmlspecialchars($notice) ?></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="alert"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
     <?php if ($internships): ?>
-        <details class="crud-editor" open>
-            <summary>Record attendance</summary>
-            <br>
+
+        <dialog class="modal-dialog" id="create-attendance-modal">
+            <div class="modal-content">
+            <div class="modal-header"><h2>Record attendance</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
             <form method="POST" class="crud-form">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                 <input type="hidden" name="action" value="create">
@@ -135,15 +138,16 @@ require_once __DIR__ . '/../includes/header.php';
                 <label>Time in<input type="time" name="time_in"></label>
                 <label>Time out<input type="time" name="time_out"></label>
                 <label>Status<select name="attendance_status"><option value="present">Present</option><option value="late">Late</option><option value="absent">Absent</option><option value="pending">Pending verification</option></select></label>
-                <button class="btn primary" type="submit" style="margin-top: 10px;">Create record</button>
+                <br>
+                <button class="btn primary" type="submit">Create record</button>
             </form>
-        </details>
+            </div>
+        </dialog>
 
     <?php else: ?>
         <div class="empty-state">There are no ongoing internships assigned to you.</div>
     <?php endif; ?>
-    <br>
-
+   
     <div class="table-wrap">
         <table>
             <thead><tr><th>Student</th><th>Company</th><th>Date</th><th>Time in</th><th>Time out</th><th>Hours</th><th>Status</th><th>Manage</th></tr></thead>
@@ -159,8 +163,10 @@ require_once __DIR__ . '/../includes/header.php';
                             <td><?= number_format((float) $row['hours_rendered'], 2) ?></td>
                             <td><?= htmlspecialchars(ucfirst($row['status'])) ?></td>
                             <td>
-                                <details class="crud-editor">
-                                    <summary>Edit</summary>
+                                <button class="btn secondary" type="button" data-modal-target="edit-attendance-<?= (int) $row['attendance_id'] ?>">Edit</button>
+                                <dialog class="modal-dialog" id="edit-attendance-<?= (int) $row['attendance_id'] ?>">
+                                    <div class="modal-content">
+                                    <div class="modal-header"><h2>Edit attendance record</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
                                     <form method="POST" class="crud-form stacked">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                         <input type="hidden" name="action" value="update">
@@ -171,7 +177,8 @@ require_once __DIR__ . '/../includes/header.php';
                                         <label>Status<select name="attendance_status"><?php foreach (['pending', 'present', 'late', 'absent'] as $option): ?><option value="<?= $option ?>" <?= $row['status'] === $option ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($option)) ?></option><?php endforeach; ?></select></label>
                                         <button class="btn primary" type="submit">Save changes</button>
                                     </form>
-                                </details>
+                                    </div>
+                                </dialog>
                             </td>
                         </tr>
                     <?php endwhile; ?>

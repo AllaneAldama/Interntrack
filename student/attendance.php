@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
         $check_in_stmt->bind_param('i', $internship['internship_id']);
         if ($check_in_stmt->execute()) {
+            log_activity($conn, $student_id, 'Checked in for attendance');
             $_SESSION['attendance_notice'] = 'You are checked in. Remember to check out at the end of your workday.';
             header('Location: attendance.php');
             exit;
@@ -66,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $check_out_stmt->bind_param('dii', $hours, $today['attendance_id'], $internship['internship_id']);
             $check_out_stmt->execute();
             if ($check_out_stmt->affected_rows === 1) {
+                log_activity($conn, $student_id, 'Checked out from attendance');
                 $_SESSION['attendance_notice'] = 'You are checked out. Your attendance is awaiting supervisor verification.';
                 header('Location: attendance.php');
                 exit;

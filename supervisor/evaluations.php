@@ -78,6 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ");
                 $create_stmt->bind_param('iisds', $internship_id, $supervisor_id, $type, $rating, $comments);
                 if ($create_stmt->execute()) {
+                    log_activity($conn, $supervisor_id, 'Created ' . $type . ' evaluation for internship #' . $internship_id);
                     $_SESSION['evaluation_notice'] = 'Evaluation submitted.';
                     header('Location: evaluations.php');
                     exit;
@@ -110,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $update_stmt->bind_param('sdsii', $type, $rating, $comments, $evaluation_id, $supervisor_id);
             if ($update_stmt->execute()) {
+                log_activity($conn, $supervisor_id, 'Updated evaluation #' . $evaluation_id);
                 $_SESSION['evaluation_notice'] = 'Evaluation updated.';
                 header('Location: evaluations.php');
                 exit;
@@ -118,48 +120,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
-$summary_result = $conn->query("
-    SELECT
-        COUNT(*) AS total_evaluations,
-
-        SUM(
-            CASE
-                WHEN e.evaluation_type = 'midterm'
-                THEN 1 ELSE 0
-            END
-        ) AS midterm_evaluations,
-
-        SUM(
-            CASE
-                WHEN e.evaluation_type = 'final'
-                THEN 1 ELSE 0
-            END
-        ) AS final_evaluations,
-
-        COALESCE(
-            AVG(
-                CASE
-                    WHEN e.rating > 0
-                    THEN e.rating
-                    ELSE NULL
-                END
-            ),
-            0
-        ) AS average_rating
-
-    FROM evaluations e
-    JOIN internships i
-        ON i.internship_id = e.internship_id
-    WHERE i.supervisor_id = {$supervisor_id}
-");
-
-$summary = $summary_result->fetch_assoc();
-
-$total_evaluations = (int)($summary['total_evaluations'] ?? 0);
-$midterm_evaluations = (int)($summary['midterm_evaluations'] ?? 0);
-$final_evaluations = (int)($summary['final_evaluations'] ?? 0);
-$average_rating = (float)($summary['average_rating'] ?? 0);
 
 $where = [
     "i.supervisor_id = {$supervisor_id}"
@@ -360,8 +320,23 @@ include __DIR__ . '/../includes/header.php';
     <?php if ($action_error !== ''): ?><div class="alert"><?= htmlspecialchars($action_error) ?></div><?php endif; ?>
 
     <div class="panel">
-        <div class="panel-head"><div><h2>Create Evaluation</h2><p>Submit a midterm or final evaluation for an assigned intern.</p></div></div>
+
+        <div class="panel-head">
+            <div>
+                <h2>Submitted Evaluations</h2>
+                <p>
+                    Evaluation records submitted for your assigned interns.
+                </p>
+            </div>
+           <div class="panel-head">
+            <?php if ($intern_options): ?>
+                <button class="btn primary" type="button" data-modal-target="create-evaluation-modal">Create Evaluation</button>
+            <?php endif; ?>
+        </div>
         <?php if ($intern_options): ?>
+            <dialog class="modal-dialog" id="create-evaluation-modal">
+                <div class="modal-content">
+                <div class="modal-header"><h2>Create Evaluation</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
             <form method="POST" class="crud-form">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                 <input type="hidden" name="action" value="create">
@@ -371,54 +346,11 @@ include __DIR__ . '/../includes/header.php';
                 <label>Comments<textarea name="comments" maxlength="10000" rows="3" required></textarea></label>
                 <button class="btn primary" type="submit">Submit evaluation</button>
             </form>
+                </div>
+            </dialog>
         <?php else: ?>
             <div class="empty-state">No assigned internships are available for evaluation.</div>
-        <?php endif; ?>
-    </div>
-
-    <div class="cards">
-
-        <div class="stat-card">
-            <div class="stat-icon">E</div>
-            <div>
-                <span>Total Evaluations</span>
-                <strong><?php echo $total_evaluations; ?></strong>
-            </div>
-        </div>
-
-        <div class="stat-card">
-            <div class="stat-icon">M</div>
-            <div>
-                <span>Midterm Evaluations</span>
-                <strong><?php echo $midterm_evaluations; ?></strong>
-            </div>
-        </div>
-
-        <div class="stat-card">
-            <div class="stat-icon">F</div>
-            <div>
-                <span>Final Evaluations</span>
-                <strong><?php echo $final_evaluations; ?></strong>
-            </div>
-        </div>
-
-        <div class="stat-card">
-            <div class="stat-icon">R</div>
-            <div>
-                <span>Average Rating</span>
-                <strong><?php echo number_format($average_rating, 2); ?></strong>
-            </div>
-        </div>
-
-    </div>
-
-    <div class="panel">
-
-        <div class="panel-head">
-            <div>
-                <h2>Filter Evaluations</h2>
-                <p>Search by student or company, or filter by evaluation type.</p>
-            </div>
+        <?php endif; ?>         
         </div>
 
         <form method="GET">
@@ -475,19 +407,7 @@ include __DIR__ . '/../includes/header.php';
 
         </form>
 
-    </div>
-
-    <div class="panel">
-
-        <div class="panel-head">
-            <div>
-                <h2>Submitted Evaluations</h2>
-                <p>
-                    Evaluation records submitted for your assigned interns.
-                </p>
-            </div>
-        </div>
-
+            
 
         <div class="table-wrap">
 
@@ -560,10 +480,7 @@ include __DIR__ . '/../includes/header.php';
                                 <td>
                                     <?php
                                     if (!empty($evaluation['submitted_at'])) {
-                                        echo date(
-                                            'M d, Y h:i A',
-                                            strtotime($evaluation['submitted_at'])
-                                        );
+                                        echo htmlspecialchars(format_system_datetime($evaluation['submitted_at'], $system_settings));
                                     } else {
                                         echo '-';
                                     }
@@ -571,8 +488,10 @@ include __DIR__ . '/../includes/header.php';
                                 </td>
 
                                 <td>
-                                    <details class="crud-editor">
-                                        <summary>Edit</summary>
+                                    <button class="btn secondary" type="button" data-modal-target="edit-evaluation-<?= (int) $evaluation['evaluation_id'] ?>">Edit</button>
+                                    <dialog class="modal-dialog" id="edit-evaluation-<?= (int) $evaluation['evaluation_id'] ?>">
+                                        <div class="modal-content">
+                                        <div class="modal-header"><h2>Edit Evaluation</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
                                         <form method="POST" class="crud-form stacked">
                                             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                             <input type="hidden" name="action" value="update">
@@ -582,7 +501,8 @@ include __DIR__ . '/../includes/header.php';
                                             <label>Comments<textarea name="comments" maxlength="10000" rows="3" required><?= htmlspecialchars($evaluation['comments'] ?? '') ?></textarea></label>
                                             <button class="btn primary" type="submit">Save evaluation</button>
                                         </form>
-                                    </details>
+                                        </div>
+                                    </dialog>
                                 </td>
 
                             </tr>

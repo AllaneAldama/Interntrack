@@ -3,7 +3,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_role(['coordinator']);
 
-$page_title = 'Coordinator Dashboard';
+$page_title = 'Dashboard';
 
 function coordinator_count(mysqli $conn, string $sql): int
 {
@@ -23,19 +23,14 @@ $total_students = coordinator_count(
     "SELECT COUNT(*) FROM users WHERE role = 'student'"
 );
 
-$active_internships = coordinator_count(
-    $conn,
-    "SELECT COUNT(*) FROM internships WHERE status = 'ongoing'"
-);
-
 $partner_companies = coordinator_count(
     $conn,
-    "SELECT COUNT(*) FROM companies WHERE status = 'active'"
+    "SELECT COUNT(*) FROM companies"
 );
 
 $pending_requirements = coordinator_count(
     $conn,
-    "SELECT COUNT(*) FROM requirements WHERE status = 'pending'"
+    "SELECT COUNT(*) FROM requirements WHERE status = 'submitted'"
 );
 
 $pending_reports = coordinator_count(
@@ -122,86 +117,9 @@ if ($internships_result) {
 
 }
 
-$recent_activity = [];
-
-$activity_result = $conn->query(
-    "SELECT
-        COALESCE(u.full_name, 'System') AS full_name,
-        al.action,
-        al.created_at
-     FROM activity_logs al
-     LEFT JOIN users u
-        ON u.user_id = al.user_id
-     ORDER BY al.created_at DESC
-     LIMIT 6"
-);
-
-if ($activity_result) {
-
-    while ($row = $activity_result->fetch_assoc()) {
-        $recent_activity[] = $row;
-    }
-
-}
-
 require_once __DIR__ . '/../includes/header.php';
 
 ?>
-
-<div class="cards">
-
-    <div class="stat-card">
-
-        <div class="stat-icon">S</div>
-
-        <div>
-            <span>Total Students</span>
-            <strong><?= $total_students ?></strong>
-        </div>
-
-    </div>
-
-
-    <div class="stat-card">
-
-        <div class="stat-icon">I</div>
-
-        <div>
-            <span>Active Internships</span>
-            <strong><?= $active_internships ?></strong>
-        </div>
-
-    </div>
-
-
-    <div class="stat-card">
-
-        <div class="stat-icon">C</div>
-
-        <div>
-            <span>Partner Companies</span>
-            <strong><?= $partner_companies ?></strong>
-        </div>
-
-    </div>
-
-
-    <div class="stat-card">
-
-        <div class="stat-icon">!</div>
-
-        <div>
-            <span>Pending Reviews</span>
-
-            <strong>
-                <?= $pending_requirements + $pending_reports ?>
-            </strong>
-
-        </div>
-
-    </div>
-
-</div>
 
 <section class="panel" style="margin-top:24px;">
 
@@ -209,11 +127,10 @@ require_once __DIR__ . '/../includes/header.php';
 
         <div>
 
-            <h2>Coordinator Overview</h2>
+            <h2>Overview</h2>
 
             <p>
-                Monitor students, internships, companies, and pending
-                internship-related activities.
+                Monitor student progress, internships, partner companies, and requirements awaiting review.
             </p>
 
         </div>
@@ -221,7 +138,7 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 
 
-    <div class="info-grid">
+    <div class="info-grid coordinator-overview-grid">
 
         <div>
 
@@ -266,6 +183,16 @@ require_once __DIR__ . '/../includes/header.php';
 
         </div>
 
+        <div>
+            <small>Partner Companies</small>
+            <strong><?= $partner_companies ?></strong>
+        </div>
+
+        <div>
+            <small>Requirements Pending Review</small>
+            <strong><?= $pending_requirements ?></strong>
+        </div>
+
     </div>
 
 </section>
@@ -279,7 +206,7 @@ require_once __DIR__ . '/../includes/header.php';
             <h2>Recent Students</h2>
 
             <p>
-                Latest student accounts registered in InternTrack.
+                Latest student accounts registered.
             </p>
 
         </div>
@@ -336,12 +263,7 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
 
                         <td>
-                            <?= htmlspecialchars(
-                                date(
-                                    'M d, Y',
-                                    strtotime($student['created_at'])
-                                )
-                            ) ?>
+                            <?= htmlspecialchars(format_system_date($student['created_at'], $system_settings)) ?>
                         </td>
 
                     </tr>
@@ -499,14 +421,7 @@ require_once __DIR__ . '/../includes/header.php';
 
                             <?php if ($internship['start_date']): ?>
 
-                                <?= htmlspecialchars(
-                                    date(
-                                        'M d, Y',
-                                        strtotime(
-                                            $internship['start_date']
-                                        )
-                                    )
-                                ) ?>
+                                <?= htmlspecialchars(format_system_date($internship['start_date'], $system_settings)) ?>
 
                             <?php else: ?>
 
@@ -520,14 +435,7 @@ require_once __DIR__ . '/../includes/header.php';
 
                             <?php if ($internship['end_date']): ?>
 
-                                <?= htmlspecialchars(
-                                    date(
-                                        'M d, Y',
-                                        strtotime(
-                                            $internship['end_date']
-                                        )
-                                    )
-                                ) ?>
+                                <?= htmlspecialchars(format_system_date($internship['end_date'], $system_settings)) ?>
 
                             <?php else: ?>
 
@@ -627,96 +535,5 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 
 </section>
-
-<section class="panel" style="margin-top:24px;">
-
-    <div class="panel-head">
-
-        <div>
-
-            <h2>Recent Activity</h2>
-
-            <p>
-                Latest actions recorded by the system.
-            </p>
-
-        </div>
-
-    </div>
-
-
-    <div class="table-wrap">
-
-        <table>
-
-            <thead>
-
-                <tr>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Date</th>
-                </tr>
-
-            </thead>
-
-
-            <tbody>
-
-            <?php if ($recent_activity): ?>
-
-                <?php foreach ($recent_activity as $activity): ?>
-
-                    <tr>
-
-                        <td>
-                            <?= htmlspecialchars(
-                                $activity['full_name']
-                            ) ?>
-                        </td>
-
-                        <td>
-                            <?= htmlspecialchars(
-                                $activity['action']
-                            ) ?>
-                        </td>
-
-                        <td>
-                            <?= htmlspecialchars(
-                                date(
-                                    'M d, Y h:i A',
-                                    strtotime(
-                                        $activity['created_at']
-                                    )
-                                )
-                            ) ?>
-                        </td>
-
-                    </tr>
-
-                <?php endforeach; ?>
-
-            <?php else: ?>
-
-                <tr>
-
-                    <td
-                        colspan="3"
-                        class="empty-state"
-                    >
-                        No activity logs found yet.
-                    </td>
-
-                </tr>
-
-            <?php endif; ?>
-
-            </tbody>
-
-        </table>
-
-    </div>
-
-</section>
-
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

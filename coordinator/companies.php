@@ -49,6 +49,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($save_stmt->execute()) {
+            log_activity(
+                $conn,
+                (int) $_SESSION['user_id'],
+                $action === 'create' ? 'Created partner company' : 'Updated partner company #' . $company_id
+            );
             $_SESSION['company_action_notice'] = $action === 'create' ? 'Company created.' : 'Company updated.';
             header('Location: companies.php');
             exit;
@@ -325,8 +330,8 @@ require_once __DIR__ . '/../includes/header.php';
 
         </div>
 
-        <div class="company-badge">
-            Coordinator View
+        <div>
+            <button class="btn primary" type="button" data-modal-target="create-company-modal">Add partner company</button>
         </div>
 
     </div>
@@ -334,9 +339,9 @@ require_once __DIR__ . '/../includes/header.php';
     <?php if ($action_notice !== ''): ?><div class="alert success"><?= htmlspecialchars($action_notice) ?></div><?php endif; ?>
     <?php if ($action_error !== ''): ?><div class="alert"><?= htmlspecialchars($action_error) ?></div><?php endif; ?>
 
-    <details class="crud-editor" open>
-        <summary>Add partner company</summary>
-        <br>
+    <dialog class="modal-dialog" id="create-company-modal">
+        <div class="modal-content">
+        <div class="modal-header"><h2>Add partner company</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
         <form method="POST" class="crud-form">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
             <input type="hidden" name="action" value="create">
@@ -345,10 +350,12 @@ require_once __DIR__ . '/../includes/header.php';
             <label>Contact person<input name="contact_person" maxlength="150"></label>
             <label>Contact email<input type="email" name="contact_email" maxlength="150"></label>
             <label>Contact number<input name="contact_number" maxlength="50"></label>
-            <button class="btn primary" type="submit" style="margin-top: 10px;">Add company</button>
+            <br>
+            <button class="btn primary" type="submit">Add company</button>
         </form>
-    </details>
-    <br>
+        </div>
+    </dialog>
+ 
     <form
         method="GET"
         class="filter-form"
@@ -466,8 +473,10 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
 
                         <td>
-                            <details class="crud-editor">
-                                <summary>Edit</summary>
+                            <button class="btn secondary" type="button" data-modal-target="edit-company-<?= (int) $company['company_id'] ?>">Edit</button>
+                            <dialog class="modal-dialog" id="edit-company-<?= (int) $company['company_id'] ?>">
+                                <div class="modal-content">
+                                <div class="modal-header"><h2>Edit partner company</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
                                 <form method="POST" class="crud-form stacked">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="update">
@@ -480,7 +489,8 @@ require_once __DIR__ . '/../includes/header.php';
                                     <label>Status<select name="company_status"><option value="active" <?= $company['status'] === 'active' ? 'selected' : '' ?>>Active</option><option value="inactive" <?= $company['status'] === 'inactive' ? 'selected' : '' ?>>Inactive</option></select></label>
                                     <button class="btn primary" type="submit">Save changes</button>
                                 </form>
-                            </details>
+                                </div>
+                            </dialog>
                         </td>
 
                     </tr>

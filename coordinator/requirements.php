@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ");
                     $create_stmt->bind_param('is', $internship_id, $requirement_name);
                     if ($create_stmt->execute()) {
+                        log_activity($conn, $coordinator_id, 'Added internship requirement #' . $create_stmt->insert_id);
                         $_SESSION['requirement_review_notice'] = 'Requirement added to the internship.';
                         header('Location: requirements.php');
                         exit;
@@ -91,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $rename_stmt->bind_param('sii', $requirement_name, $requirement_id, $coordinator_id);
             if ($rename_stmt->execute()) {
+                log_activity($conn, $coordinator_id, 'Renamed internship requirement #' . $requirement_id);
                 $_SESSION['requirement_review_notice'] = 'Requirement updated.';
                 header('Location: requirements.php');
                 exit;
@@ -114,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($review_stmt->affected_rows !== 1) {
             $error = 'This requirement is not submitted or is not assigned to you.';
         } else {
+            log_activity($conn, $coordinator_id, 'Reviewed internship requirement #' . $requirement_id . ' (' . $decision . ')');
             $_SESSION['requirement_review_notice'] = 'Requirement review saved.';
             header('Location: requirements.php');
             exit;
@@ -141,13 +144,14 @@ $requirements = $stmt->get_result();
 require_once __DIR__ . '/../includes/header.php';
 ?>
 <section class="panel">
-    <div class="panel-head"><div><h2>Student Requirement Reviews</h2><p>Review submitted documents for internships assigned to you.</p></div></div>
+    <div class="panel-head"><div><h2>Student Requirement Reviews</h2><p>Review submitted documents for internships assigned to you.</p></div><div>        <button class="btn primary" type="button" data-modal-target="create-requirement-modal">Add requirement</button></div></div>
     <?php if ($notice !== ''): ?><div class="alert success"><?= htmlspecialchars($notice) ?></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="alert"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if ($internships): ?>
-        <details class="crud-editor" open>
-            <summary>Add requirement</summary>
-            <br>
+
+        <dialog class="modal-dialog" id="create-requirement-modal">
+            <div class="modal-content">
+            <div class="modal-header"><h2>Add requirement</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
             <form method="POST" class="crud-form">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                 <input type="hidden" name="action" value="create">
@@ -155,9 +159,10 @@ require_once __DIR__ . '/../includes/header.php';
                 <label>Requirement name<input name="requirement_name" maxlength="150" required></label>
                 <button class="btn primary" type="submit">Add requirement</button>
             </form>
-        </details>
+            </div>
+        </dialog>
     <?php endif; ?>
-    <br>
+
     <div class="table-wrap">
         <table>
             <thead><tr><th>Student</th><th>Company</th><th>Requirement</th><th>Document</th><th>Status</th><th>Feedback</th><th>Review action</th><th>Manage</th></tr></thead>
@@ -184,8 +189,10 @@ require_once __DIR__ . '/../includes/header.php';
                                 <?php else: ?>No review needed<?php endif; ?>
                             </td>
                             <td>
-                                <details class="crud-editor">
-                                    <summary>Edit name</summary>
+                                <button class="btn secondary" type="button" data-modal-target="edit-requirement-<?= (int) $row['requirement_id'] ?>">Edit name</button>
+                                <dialog class="modal-dialog" id="edit-requirement-<?= (int) $row['requirement_id'] ?>">
+                                    <div class="modal-content">
+                                    <div class="modal-header"><h2>Edit requirement</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
                                     <form method="POST" class="crud-form stacked">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                         <input type="hidden" name="action" value="rename">
@@ -193,7 +200,8 @@ require_once __DIR__ . '/../includes/header.php';
                                         <label>Requirement name<input name="requirement_name" maxlength="150" required value="<?= htmlspecialchars($row['requirement_name']) ?>"></label>
                                         <button class="btn primary" type="submit">Save name</button>
                                     </form>
-                                </details>
+                                    </div>
+                                </dialog>
                             </td>
                         </tr>
                     <?php endwhile; ?>

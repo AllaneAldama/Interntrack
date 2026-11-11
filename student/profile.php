@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_role(['student']);
-$page_title = 'Internship Profile';
+$page_title = 'Profile';
 $error = '';
 $notice = $_SESSION['profile_notice'] ?? '';
 unset($_SESSION['profile_notice']);
@@ -28,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
         $update_stmt->bind_param('sssi', $full_name, $student_number, $email, $_SESSION['user_id']);
         if ($update_stmt->execute()) {
+            log_activity($conn, (int) $_SESSION['user_id'], 'Updated student profile');
             $_SESSION['full_name'] = $full_name;
             $_SESSION['email'] = $email;
             $_SESSION['profile_notice'] = 'Your profile was updated.';
@@ -58,9 +59,10 @@ require_once __DIR__ . '/../includes/header.php';
     <label>Full name<input name="full_name" maxlength="150" required value="<?= htmlspecialchars($data['full_name'] ?? '') ?>"></label>
     <label>Student number<input name="student_number" maxlength="30" required value="<?= htmlspecialchars($data['student_number'] ?? '') ?>"></label>
     <label>Email<input type="email" name="email" maxlength="150" required value="<?= htmlspecialchars($data['email'] ?? '') ?>"></label>
-    <button class="btn primary" type="submit" style="margin-top: 10px; margin-bottom: 20px;">Save profile</button>
+    <br>
+    <button class="btn primary" type="submit";">Save profile</button>
 </form>
-
+<br>
 <div class="form-grid">
     <div><label>Company</label><input value="<?= htmlspecialchars($data['company_name'] ?? 'Not assigned') ?>" readonly></div>
     <div><label>Start Date</label><input value="<?= htmlspecialchars($data['start_date'] ?? '') ?>" readonly></div>

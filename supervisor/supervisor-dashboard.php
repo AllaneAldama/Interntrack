@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_role(['supervisor']);
 
-$page_title = 'Supervisor Dashboard';
+$page_title = 'Dashboard';
 
 $supervisor_id = (int) ($_SESSION['user_id'] ?? 0);
 
@@ -29,13 +29,6 @@ $total_interns = 0;
 $ongoing_interns = 0;
 $completed_interns = 0;
 $reports_for_review = 0;
-
-$internship_statuses = [
-    'pending' => 0,
-    'ongoing' => 0,
-    'completed' => 0,
-    'cancelled' => 0
-];
 
 $recent_interns = [];
 
@@ -91,22 +84,6 @@ if ($has_supervisor_id && $supervisor_id > 0) {
         }
     }
 
-    $status_result = $conn->query("
-        SELECT status, COUNT(*) AS total
-        FROM internships
-        WHERE supervisor_id = {$supervisor_id}
-        GROUP BY status
-    ");
-
-    if ($status_result) {
-        while ($row = $status_result->fetch_assoc()) {
-
-            if (array_key_exists($row['status'], $internship_statuses)) {
-                $internship_statuses[$row['status']] = (int) $row['total'];
-            }
-        }
-    }
-
     $internship_result = $conn->query("
         SELECT
             i.internship_id,
@@ -137,43 +114,6 @@ if ($has_supervisor_id && $supervisor_id > 0) {
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
-
-<div class="cards">
-
-    <div class="stat-card">
-        <div class="stat-icon">I</div>
-        <div>
-            <span>Assigned Interns</span>
-            <strong><?php echo $total_interns; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">O</div>
-        <div>
-            <span>Ongoing Interns</span>
-            <strong><?php echo $ongoing_interns; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">C</div>
-        <div>
-            <span>Completed Interns</span>
-            <strong><?php echo $completed_interns; ?></strong>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon">R</div>
-        <div>
-            <span>Reports For Review</span>
-            <strong><?php echo $reports_for_review; ?></strong>
-        </div>
-    </div>
-
-</div>
-
 
 <?php if (!$has_supervisor_id): ?>
 
@@ -219,33 +159,16 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="panel">
     <div class="panel-head">
         <div>
-            <h2>Internship Overview</h2>
-            <p>Current internship status of your assigned interns.</p>
+            <h2>Overview</h2>
+            <p>Assigned interns and items requiring your attention.</p>
         </div>
     </div>
 
-    <div class="info-grid">
-
-        <div>
-            <small>Pending</small>
-            <strong><?php echo $internship_statuses['pending']; ?></strong>
-        </div>
-
-        <div>
-            <small>Ongoing</small>
-            <strong><?php echo $internship_statuses['ongoing']; ?></strong>
-        </div>
-
-        <div>
-            <small>Completed</small>
-            <strong><?php echo $internship_statuses['completed']; ?></strong>
-        </div>
-
-        <div>
-            <small>Cancelled</small>
-            <strong><?php echo $internship_statuses['cancelled']; ?></strong>
-        </div>
-
+    <div class="cards">
+        <div class="stat-card"><div class="stat-icon">I</div><div><span>Assigned Interns</span><strong><?= $total_interns ?></strong></div></div>
+        <div class="stat-card"><div class="stat-icon">O</div><div><span>Ongoing</span><strong><?= $ongoing_interns ?></strong></div></div>
+        <div class="stat-card"><div class="stat-icon">C</div><div><span>Completed</span><strong><?= $completed_interns ?></strong></div></div>
+        <div class="stat-card"><div class="stat-icon">R</div><div><span>Reports for Review</span><strong><?= $reports_for_review ?></strong></div></div>
     </div>
 </div>
 
@@ -254,7 +177,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="panel-head">
         <div>
             <h2>Recent Assigned Interns</h2>
-            <p>Latest internship assignments associated with your account.</p>
+            <p>Latest internship assignments.</p>
         </div>
     </div>
 

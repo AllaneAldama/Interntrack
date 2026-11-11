@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_role(['coordinator']);
 
 $page_title = 'Students';
+$password_minimum = max(8, (int) $system_settings['minimum_password_length']);
 $action_error = '';
 $action_notice = $_SESSION['student_action_notice'] ?? '';
 unset($_SESSION['student_action_notice']);
@@ -31,8 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         || !in_array($status_value, ['active', 'inactive'], true)
         || ($action === 'update' && $student_id === false)) {
         $action_error = 'Enter a valid student name, number, email, and account status.';
-    } elseif ($action === 'create' && strlen($password) < 8) {
-        $action_error = 'Set a temporary password of at least 8 characters.';
+    } elseif ($action === 'create' && strlen($password) < $password_minimum) {
+        $action_error = 'Set a temporary password of at least ' . $password_minimum . ' characters.';
     } else {
         if ($action === 'create') {
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
@@ -52,6 +53,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($save_stmt->execute()) {
+            log_activity(
+                $conn,
+                (int) $_SESSION['user_id'],
+                $action === 'create' ? 'Created student account' : 'Updated student account #' . $student_id
+            );
             $_SESSION['student_action_notice'] = $action === 'create' ? 'Student account created.' : 'Student account updated.';
             header('Location: students.php');
             exit;
@@ -331,12 +337,8 @@ require_once __DIR__ . '/../includes/header.php';
 
 
         </div>
-
-
-        <div class="role-badge">
-
-            Coordinator View
-
+        <div>
+            <button class="btn primary" type="button" data-modal-target="create-student-modal">Add student account</button>
         </div>
 
     </div>
@@ -344,20 +346,21 @@ require_once __DIR__ . '/../includes/header.php';
     <?php if ($action_notice !== ''): ?><div class="alert success"><?= htmlspecialchars($action_notice) ?></div><?php endif; ?>
     <?php if ($action_error !== ''): ?><div class="alert"><?= htmlspecialchars($action_error) ?></div><?php endif; ?>
 
-    <details class="crud-editor" open>
-        <summary>Add student account</summary>
-        <br>
+    <dialog class="modal-dialog" id="create-student-modal">
+        <div class="modal-content">
+        <div class="modal-header"><h2>Add student account</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
         <form method="POST" class="crud-form">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
             <input type="hidden" name="action" value="create">
             <label>Full name<input name="full_name" maxlength="150" required></label>
             <label>Student number<input name="student_number" maxlength="30" required></label>
             <label>Email<input type="email" name="email" maxlength="150" required></label>
-            <label>Temporary password<input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
-            <button class="btn primary" type="submit" style="margin-top: 10px;">Create student</button>
+            <label>Temporary password<input type="password" name="password" minlength="<?= $password_minimum ?>" required autocomplete="new-password"></label>
+            <button class="btn primary" type="submit">Create student</button>
         </form>
-    </details>
-    <br>
+        </div>
+    </dialog>
+   
     <form
         method="GET"
         class="filter-form"
@@ -484,20 +487,15 @@ require_once __DIR__ . '/../includes/header.php';
 
                         <td>
 
-                            <?= htmlspecialchars(
-                                date(
-                                    'M d, Y',
-                                    strtotime(
-                                        $student['created_at']
-                                    )
-                                )
-                            ) ?>
+                            <?= htmlspecialchars(format_system_date($student['created_at'], $system_settings)) ?>
 
                         </td>
 
                         <td>
-                            <details class="crud-editor">
-                                <summary>Edit</summary>
+                            <button class="btn secondary" type="button" data-modal-target="edit-student-<?= (int) $student['user_id'] ?>">Edit</button>
+                            <dialog class="modal-dialog" id="edit-student-<?= (int) $student['user_id'] ?>">
+                                <div class="modal-content">
+                                <div class="modal-header"><h2>Edit student</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
                                 <form method="POST" class="crud-form stacked">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="update">
@@ -508,7 +506,8 @@ require_once __DIR__ . '/../includes/header.php';
                                     <label>Status<select name="student_status"><option value="active" <?= $student['status'] === 'active' ? 'selected' : '' ?>>Active</option><option value="inactive" <?= $student['status'] === 'inactive' ? 'selected' : '' ?>>Inactive</option></select></label>
                                     <button class="btn primary" type="submit">Save changes</button>
                                 </form>
-                            </details>
+                                </div>
+                            </dialog>
                         </td>
 
                     </tr>

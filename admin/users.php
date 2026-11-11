@@ -4,8 +4,10 @@ require_once __DIR__ . '/../includes/auth.php';
 require_role(['admin']);
 
 $page_title = 'User Management';
+$creatable_roles = ['coordinator', 'supervisor', 'admin'];
 $allowed_roles = ['student', 'coordinator', 'supervisor', 'admin'];
 $allowed_statuses = ['active', 'inactive'];
+$password_minimum = max(8, (int) $system_settings['minimum_password_length']);
 $action_error = '';
 $action_notice = $_SESSION['user_action_notice'] ?? '';
 unset($_SESSION['user_action_notice']);
@@ -31,19 +33,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
 
         if ($full_name === '' || strlen($full_name) > 150 || !filter_var($email, FILTER_VALIDATE_EMAIL)
-            || strlen($email) > 150 || !in_array($role_value, $allowed_roles, true)
-            || ($role_value === 'student' && $student_number === '') || strlen($student_number) > 30
-            || strlen($password) < 8) {
-            $action_error = 'Enter a valid name, email, role, student number when applicable, and password of at least 8 characters.';
+            || strlen($email) > 150 || !in_array($role_value, $creatable_roles, true)
+            || $student_number !== ''
+            || strlen($password) < $password_minimum) {
+            $action_error = 'Enter a valid name and email, choose a coordinator, supervisor, or admin role, and set a password of at least ' . $password_minimum . ' characters.';
         } else {
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
-            $number_value = $role_value === 'student' ? $student_number : null;
             $create_stmt = $conn->prepare("
-                INSERT INTO users (student_number, full_name, email, password_hash, role)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users (full_name, email, password_hash, role)
+                VALUES (?, ?, ?, ?)
             ");
-            $create_stmt->bind_param('sssss', $number_value, $full_name, $email, $password_hash, $role_value);
+            $create_stmt->bind_param('ssss', $full_name, $email, $password_hash, $role_value);
             if ($create_stmt->execute()) {
+                log_activity($conn, (int) $_SESSION['user_id'], 'Created ' . $role_value . ' account');
                 $_SESSION['user_action_notice'] = 'User account created.';
                 header('Location: users.php');
                 exit;
@@ -56,9 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 150
             || !in_array($status_value, ['active', 'inactive'], true)
             || strlen($student_number) > 30
-            || ($new_password !== '' && strlen($new_password) < 8)
+            || ($new_password !== '' && strlen($new_password) < $password_minimum)
             || ($user_id === (int) $_SESSION['user_id'] && $status_value !== 'active')) {
-            $action_error = 'Enter valid account details and a password of at least 8 characters if resetting it. You cannot deactivate your own account.';
+            $action_error = 'Enter valid account details and a password of at least ' . $password_minimum . ' characters if resetting it. You cannot deactivate your own account.';
         } else {
             $number_value = $student_number === '' ? null : $student_number;
             if ($new_password === '') {
@@ -78,6 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $update_stmt->bind_param('sssssi', $full_name, $email, $number_value, $status_value, $password_hash, $user_id);
             }
             if ($update_stmt->execute()) {
+                if ($new_password !== '') {
+                    revoke_user_remember_tokens($conn, $user_id);
+                }
+                log_activity($conn, (int) $_SESSION['user_id'], 'Updated user account #' . $user_id);
                 if ($user_id === (int) $_SESSION['user_id']) {
                     $_SESSION['full_name'] = $full_name;
                     $_SESSION['email'] = $email;
@@ -171,7 +177,7 @@ function get_user_count(mysqli $conn, string $condition = ''): int
 
 $total_users = get_user_count($conn);
 $active_users = get_user_count($conn, "status = 'active'");
-$student_users = get_user_count($conn, "role = 'student'");
+$inactive_users = get_user_count($conn, "status = 'inactive'");
 $coordinator_users = get_user_count($conn, "role = 'coordinator'");
 $supervisor_users = get_user_count($conn, "role = 'supervisor'");
 $admin_users = get_user_count($conn, "role = 'admin'");
@@ -253,14 +259,28 @@ require_once __DIR__ . '/../includes/header.php';
         font-weight: 600;
     }
 
+    .user-stat-cards {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
     @media (max-width: 900px) {
+        .user-stat-cards {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .filter-form {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 650px) {
+        .user-stat-cards {
             grid-template-columns: 1fr;
         }
     }
 </style>
 
-<div class="cards">
+<div class="cards user-stat-cards">
 
     <div class="stat-card">
         <div class="stat-icon">U</div>
@@ -279,18 +299,26 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="stat-card">
-        <div class="stat-icon">S</div>
+        <div class="stat-icon">I</div>
         <div>
-            <span>Students</span>
-            <strong><?= $student_users ?></strong>
+            <span>Inactive Users</span>
+            <strong><?= $inactive_users ?></strong>
         </div>
     </div>
 
     <div class="stat-card">
-        <div class="stat-icon">C</div>
+        <div class="stat-icon">S</div>
         <div>
-            <span>Coordinators</span>
-            <strong><?= $coordinator_users ?></strong>
+            <span>Supervisors</span>
+            <strong><?= $supervisor_users ?></strong>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon">A</div>
+        <div>
+            <span>Administrators</span>
+            <strong><?= $admin_users ?></strong>
         </div>
     </div>
 
@@ -302,20 +330,8 @@ require_once __DIR__ . '/../includes/header.php';
         <div>
             <h2>User Management</h2>
             <p>View and monitor all InternTrack user accounts.</p>
-            <div class="user-count">
-                <?= count($users) ?> user(s) currently shown
-            </div>
         </div>
 
-        <div class="page-actions">
-            <div class="role-badge">
-                <?= $supervisor_users ?> Supervisors
-            </div>
-
-            <div class="role-badge">
-                <?= $admin_users ?> Admins
-            </div>
-        </div>
     </div>
 
     <?php if ($action_notice !== ''): ?><div class="alert success"><?= htmlspecialchars($action_notice) ?></div><?php endif; ?>
@@ -329,9 +345,8 @@ require_once __DIR__ . '/../includes/header.php';
             <input type="hidden" name="action" value="create">
             <label>Full name<input name="full_name" maxlength="150" required></label>
             <label>Email<input type="email" name="email" maxlength="150" required></label>
-            <label>Role<select name="role" required><option value="student">Student</option><option value="coordinator">Coordinator</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select></label>
-            <label>Student number (required for students)<input name="student_number" maxlength="30"></label>
-            <label>Temporary password<input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+            <label>Role<select name="role" required><option value="coordinator">Coordinator</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select></label>
+            <label>Temporary password<input type="password" name="password" minlength="<?= $password_minimum ?>" required autocomplete="new-password"></label>
             <button class="btn primary" type="submit">Create account</button>
         </form>
     </details>
@@ -429,9 +444,7 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
 
                         <td>
-                            <?= htmlspecialchars(
-                                date('M d, Y', strtotime($user['created_at']))
-                            ) ?>
+                            <?= htmlspecialchars(format_system_date($user['created_at'], $system_settings)) ?>
                         </td>
 
                         <td>
@@ -445,7 +458,7 @@ require_once __DIR__ . '/../includes/header.php';
                                     <label>Email<input type="email" name="email" maxlength="150" required value="<?= htmlspecialchars($user['email']) ?>"></label>
                                     <label>Student number<input name="student_number" maxlength="30" value="<?= htmlspecialchars($user['student_number'] ?? '') ?>"></label>
                                     <label>Status<select name="status"><option value="active" <?= $user['status'] === 'active' ? 'selected' : '' ?>>Active</option><option value="inactive" <?= $user['status'] === 'inactive' ? 'selected' : '' ?>>Inactive</option></select></label>
-                                    <label>Reset password (optional)<input type="password" name="new_password" minlength="8" autocomplete="new-password"></label>
+                                    <label>Reset password (optional)<input type="password" name="new_password" minlength="<?= $password_minimum ?>" autocomplete="new-password"></label>
                                     <button class="btn primary" type="submit">Save changes</button>
                                 </form>
                             </details>

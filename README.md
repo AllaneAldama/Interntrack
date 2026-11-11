@@ -9,11 +9,13 @@ Stack:
 
 Implemented:
 - Role-based login and dashboard routing for students, coordinators, supervisors, and admins
+- Responsive sign-in page with password visibility and optional 30-day remembered sign-in
 - Admin user creation, account updates/deactivation, optional password reset, and own profile/password settings
 - Coordinator student and company management, internship assignment create/update, requirement setup/review, and attendance create/update
 - Student profile updates, secure requirement document submissions, daily attendance check-in/out, and weekly accomplishment report submission
 - Supervisor attendance verification, accomplishment report review/revision requests, and evaluation create/update
 - Role-scoped downloads and CSRF-protected state-changing forms
+- Administrator account, general system, security, and maintenance settings, including logo upload, maintenance mode, activity logs, and downloadable SQL backups
 - No permanent delete actions; account/company/assignment records are deactivated, cancelled, or retained to preserve history
 
 Known workflow gaps:
@@ -28,6 +30,13 @@ Known workflow gaps:
 3. Open phpMyAdmin and import `database/interntrack.sql`.
 4. Visit `http://localhost/interntrack/`.
 5. Demo accounts are included in the SQL file. Passwords are `password123`.
+
+For an existing installation, run `database/migrations/001_system_settings.sql`
+in phpMyAdmin before using InternTrack. The migration adds persistent
+settings and login-attempt tracking without replacing existing application data.
+Run `database/migrations/002_remember_me.sql` to enable the optional 30-day
+remembered sign-in feature on existing installations.
+Database backups are downloaded on demand and do not include uploaded documents.
 
 If you imported the database before the demo password hash was corrected, run
 this in phpMyAdmin's SQL tab to reset the four demo accounts:
