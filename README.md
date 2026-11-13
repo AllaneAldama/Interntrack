@@ -9,6 +9,7 @@ Stack:
 
 Implemented:
 - Role-based login and dashboard routing for students, coordinators, supervisors, and admins
+- Admin dashboard overview, internship analytics, activity/error logs, and request-level performance indicators
 - Responsive sign-in page with password visibility and optional 30-day remembered sign-in
 - Admin user creation, account updates/deactivation, optional password reset, and own profile/password settings
 - Coordinator student and company management, internship assignment create/update, requirement setup/review, and attendance create/update
@@ -21,6 +22,7 @@ Implemented:
 Known workflow gaps:
 - Requirements accept PDF, JPG, PNG, and DOCX uploads up to 5 MB; ensure PHP `fileinfo` is enabled and upload limits are configured accordingly.
 - Attendance uses the web server's current date/time and does not provide GPS, geofencing, or a payroll/time-clock integration.
+- Dashboard CPU usage and server uptime are reported as unavailable when the PHP host does not expose those metrics; memory usage is for the PHP request, not total server memory.
 - External API integrations and notifications are not implemented.
 - Review the workflows and evaluation rating scale against school policy before deployment.
 
@@ -35,7 +37,9 @@ For an existing installation, run `database/migrations/001_system_settings.sql`
 in phpMyAdmin before using InternTrack. The migration adds persistent
 settings and login-attempt tracking without replacing existing application data.
 Run `database/migrations/002_remember_me.sql` to enable the optional 30-day
-remembered sign-in feature on existing installations.
+remembered sign-in feature on existing installations. Run
+`database/migrations/003_system_error_logs.sql` to enable dashboard technical
+error logging on existing installations.
 Database backups are downloaded on demand and do not include uploaded documents.
 
 If you imported the database before the demo password hash was corrected, run

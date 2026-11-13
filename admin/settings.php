@@ -5,6 +5,15 @@ require_role(['admin']);
 $page_title = 'Settings';
 $admin_id = (int) $_SESSION['user_id'];
 $error = '';
+$action = '';
+$settings_tabs = ['account', 'general', 'maintenance', 'security'];
+$action_tabs = [
+    'profile' => 'account',
+    'password' => 'account',
+    'general' => 'general',
+    'maintenance' => 'maintenance',
+    'security' => 'security'
+];
 $notice = $_SESSION['settings_notice'] ?? '';
 unset($_SESSION['settings_notice']);
 
@@ -46,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['full_name'] = $full_name;
                 $_SESSION['email'] = $email;
                 $_SESSION['settings_notice'] = 'Profile information updated.';
-                header('Location: settings.php');
+                header('Location: settings.php?tab=account');
                 exit;
             }
             $error = 'Could not update your profile. The email may already be in use.';
@@ -69,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 clear_remember_me_token($conn);
                 log_activity($conn, $admin_id, 'Changed administrator password');
                 $_SESSION['settings_notice'] = 'Password changed.';
-                header('Location: settings.php');
+                header('Location: settings.php?tab=account');
                 exit;
             }
             $error = 'Could not update your password.';
@@ -144,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 log_activity($conn, $admin_id, 'Updated general system settings');
                 $_SESSION['settings_notice'] = 'General system settings updated.';
-                header('Location: settings.php');
+                header('Location: settings.php?tab=general');
                 exit;
             }
         }
@@ -175,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             log_activity($conn, $admin_id, 'Updated security settings');
             $_SESSION['settings_notice'] = 'Security settings updated.';
-            header('Location: settings.php');
+            header('Location: settings.php?tab=security');
             exit;
         }
     } elseif ($action === 'maintenance') {
@@ -191,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['settings_notice'] = $maintenance_mode === '1'
                 ? 'Maintenance mode enabled. Only admins can access the application.'
                 : 'Maintenance mode disabled.';
-            header('Location: settings.php');
+            header('Location: settings.php?tab=maintenance');
             exit;
         }
     } else {
@@ -199,15 +208,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$active_tab = 'account';
+$requested_tab = $_GET['tab'] ?? null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($action_tabs[$action])) {
+    $active_tab = $action_tabs[$action];
+} elseif (is_string($requested_tab) && in_array($requested_tab, $settings_tabs, true)) {
+    $active_tab = $requested_tab;
+}
+
+$log_page_size = 30;
+$parse_page = static function (mixed $value): int {
+    return is_string($value) && ctype_digit($value) ? max(1, (int) $value) : 1;
+};
+
+$activity_count_result = $conn->query('SELECT COUNT(*) AS total FROM activity_logs');
+if (!$activity_count_result) {
+    throw new RuntimeException('Could not count activity logs.');
+}
+$activity_log_total = (int) $activity_count_result->fetch_assoc()['total'];
+$activity_page_count = max(1, (int) ceil($activity_log_total / $log_page_size));
+$activity_page = min($parse_page($_GET['activity_page'] ?? null), $activity_page_count);
+$activity_offset = ($activity_page - 1) * $log_page_size;
+$activity_first = $activity_log_total > 0 ? $activity_offset + 1 : 0;
+$activity_last = min($activity_offset + $log_page_size, $activity_log_total);
+
 $logs_stmt = $conn->prepare("
     SELECT COALESCE(u.full_name, 'System') AS full_name, al.action, al.created_at
     FROM activity_logs al
     LEFT JOIN users u ON u.user_id = al.user_id
     ORDER BY al.created_at DESC, al.log_id DESC
-    LIMIT 50
+    LIMIT ? OFFSET ?
 ");
-$logs_stmt->execute();
+if (!$logs_stmt) {
+    throw new RuntimeException('Could not prepare activity log query.');
+}
+$logs_stmt->bind_param('ii', $log_page_size, $activity_offset);
+if (!$logs_stmt->execute()) {
+    throw new RuntimeException('Could not load activity logs.');
+}
 $system_logs = $logs_stmt->get_result();
+
+$error_count_result = $conn->query('SELECT COUNT(*) AS total FROM system_error_logs');
+if (!$error_count_result) {
+    throw new RuntimeException('Could not count system error logs.');
+}
+$error_log_total = (int) $error_count_result->fetch_assoc()['total'];
+$error_page_count = max(1, (int) ceil($error_log_total / $log_page_size));
+$error_page = min($parse_page($_GET['error_page'] ?? null), $error_page_count);
+$error_offset = ($error_page - 1) * $log_page_size;
+$error_first = $error_log_total > 0 ? $error_offset + 1 : 0;
+$error_last = min($error_offset + $log_page_size, $error_log_total);
+
+$errors_stmt = $conn->prepare("
+    SELECT error_id, error_type, description, severity, occurred_at
+    FROM system_error_logs
+    ORDER BY occurred_at DESC, error_id DESC
+    LIMIT ? OFFSET ?
+");
+if (!$errors_stmt) {
+    throw new RuntimeException('Could not prepare system error log query.');
+}
+$errors_stmt->bind_param('ii', $log_page_size, $error_offset);
+if (!$errors_stmt->execute()) {
+    throw new RuntimeException('Could not load system error logs.');
+}
+$system_errors = $errors_stmt->get_result();
+
+$activity_page_url = static function (int $page) use ($error_page): string {
+    return 'settings.php?' . http_build_query([
+        'tab' => 'security',
+        'activity_page' => $page,
+        'error_page' => $error_page
+    ]);
+};
+$error_page_url = static function (int $page) use ($activity_page): string {
+    return 'settings.php?' . http_build_query([
+        'tab' => 'security',
+        'activity_page' => $activity_page,
+        'error_page' => $page
+    ]);
+};
 $mysql_version = $conn->server_info;
 
 require_once __DIR__ . '/../includes/header.php';
@@ -216,7 +296,23 @@ require_once __DIR__ . '/../includes/header.php';
 <?php if ($notice !== ''): ?><div class="alert success"><?= htmlspecialchars($notice) ?></div><?php endif; ?>
 <?php if ($error !== ''): ?><div class="alert"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
-<section class="panel settings-section">
+<nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+    <button type="button" role="tab" id="account-tab" aria-controls="account-panel"
+        aria-selected="<?= $active_tab === 'account' ? 'true' : 'false' ?>"
+        tabindex="<?= $active_tab === 'account' ? '0' : '-1' ?>" data-settings-tab="account">Account</button>
+    <button type="button" role="tab" id="general-tab" aria-controls="general-panel"
+        aria-selected="<?= $active_tab === 'general' ? 'true' : 'false' ?>"
+        tabindex="<?= $active_tab === 'general' ? '0' : '-1' ?>" data-settings-tab="general">General</button>
+    <button type="button" role="tab" id="maintenance-tab" aria-controls="maintenance-panel"
+        aria-selected="<?= $active_tab === 'maintenance' ? 'true' : 'false' ?>"
+        tabindex="<?= $active_tab === 'maintenance' ? '0' : '-1' ?>" data-settings-tab="maintenance">Maintenance</button>
+    <button type="button" role="tab" id="security-tab" aria-controls="security-panel"
+        aria-selected="<?= $active_tab === 'security' ? 'true' : 'false' ?>"
+        tabindex="<?= $active_tab === 'security' ? '0' : '-1' ?>" data-settings-tab="security">Security</button>
+</nav>
+
+<section class="panel settings-section settings-tab-panel" id="account-panel" role="tabpanel" aria-labelledby="account-tab"
+    <?= $active_tab !== 'account' ? 'hidden' : '' ?>>
     <div class="settings-section-title">
         <span class="settings-section-letter">A</span>
         <div><h2>Account Settings</h2><p>Settings related to the administrator's account.</p></div>
@@ -248,7 +344,8 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </section>
 
-<section class="panel settings-section">
+<section class="panel settings-section settings-tab-panel" id="general-panel" role="tabpanel" aria-labelledby="general-tab"
+    <?= $active_tab !== 'general' ? 'hidden' : '' ?>>
     <div class="settings-section-title">
         <span class="settings-section-letter">B</span>
         <div><h2>General System Settings</h2><p>Basic application configuration.</p></div>
@@ -272,14 +369,24 @@ require_once __DIR__ . '/../includes/header.php';
         <?php endif; ?>
         <button class="btn primary" type="submit">Save general settings</button>
     </form>
+
+    <div class="settings-subsection">
+        <h3>System Information</h3>
+        <div class="info-grid">
+            <div><small>Application Version</small><strong><?= htmlspecialchars($system_settings['application_version']) ?></strong></div>
+            <div><small>PHP Version</small><strong><?= htmlspecialchars(PHP_VERSION) ?></strong></div>
+            <div><small>MySQL Version</small><strong><?= htmlspecialchars($mysql_version) ?></strong></div>
+            <div><small>Time Zone</small><strong><?= htmlspecialchars($system_settings['system_timezone']) ?></strong></div>
+        </div>
+    </div>
 </section>
 
-<section class="panel settings-section">
+<section class="panel settings-section settings-tab-panel" id="security-panel" role="tabpanel" aria-labelledby="security-tab"
+    <?= $active_tab !== 'security' ? 'hidden' : '' ?>>
     <div class="settings-section-title">
-        <span class="settings-section-letter">C</span>
+        <span class="settings-section-letter">D</span>
         <div><h2>Security Settings</h2><p>Options for improving application security.</p></div>
     </div>
-    <p class="settings-note">Account verification is omitted as requested. This app has no self-registration or email delivery workflow.</p>
     <form method="POST" class="crud-form">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
         <input type="hidden" name="action" value="security">
@@ -314,13 +421,94 @@ require_once __DIR__ . '/../includes/header.php';
         <label>Automatic Logout
             <select name="automatic_logout"><option value="1" <?= $system_settings['automatic_logout'] === '1' ? 'selected' : '' ?>>Enabled</option><option value="0" <?= $system_settings['automatic_logout'] === '0' ? 'selected' : '' ?>>Disabled</option></select>
         </label>
+        <br>
         <button class="btn primary" type="submit">Save security settings</button>
     </form>
+    <div class="settings-subsection" id="activity-log-section">
+        <h3>Activity Logs</h3>
+        <p>Showing up to 30 recent application activity events per page.</p>
+        <div class="table-wrap logs-scroll">
+            <table>
+                <thead><tr><th>User</th><th>Activity</th><th>Date and time</th></tr></thead>
+                <tbody>
+                    <?php if ($system_logs->num_rows > 0): ?>
+                        <?php while ($log = $system_logs->fetch_assoc()): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($log['full_name']) ?></td>
+                                <td><?= htmlspecialchars($log['action']) ?></td>
+                                <td><?= htmlspecialchars(format_system_datetime($log['created_at'], $system_settings)) ?></td>
+                            </tr>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <tr><td colspan="3" class="empty-state">No activity logs found.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div class="log-pagination">
+            <span>Showing <?= $activity_first ?>–<?= $activity_last ?> of <?= $activity_log_total ?></span>
+            <nav class="pagination" aria-label="Activity log pages">
+                <?php if ($activity_page > 1): ?>
+                    <a href="<?= htmlspecialchars($activity_page_url($activity_page - 1)) ?>">Previous</a>
+                <?php else: ?>
+                    <span aria-disabled="true">Previous</span>
+                <?php endif; ?>
+                <span>Page <?= $activity_page ?> of <?= $activity_page_count ?></span>
+                <?php if ($activity_page < $activity_page_count): ?>
+                    <a href="<?= htmlspecialchars($activity_page_url($activity_page + 1)) ?>">Next</a>
+                <?php else: ?>
+                    <span aria-disabled="true">Next</span>
+                <?php endif; ?>
+            </nav>
+        </div>
+    </div>
+
+    <div class="settings-subsection" id="error-log-section">
+        <h3>Error Logs</h3>
+        <p>Showing up to 30 recent technical errors per page.</p>
+        <div class="table-wrap logs-scroll">
+            <table>
+                <thead><tr><th>Error ID</th><th>Error Type</th><th>Description</th><th>Date and time</th><th>Severity</th></tr></thead>
+                <tbody>
+                    <?php if ($system_errors->num_rows > 0): ?>
+                        <?php while ($log = $system_errors->fetch_assoc()): ?>
+                            <tr>
+                                <td><?= (int) $log['error_id'] ?></td>
+                                <td><?= htmlspecialchars($log['error_type']) ?></td>
+                                <td class="error-description" title="<?= htmlspecialchars($log['description']) ?>"><?= htmlspecialchars($log['description']) ?></td>
+                                <td><?= htmlspecialchars(format_system_datetime($log['occurred_at'], $system_settings)) ?></td>
+                                <td><span class="badge severity-<?= htmlspecialchars($log['severity']) ?>"><?= htmlspecialchars(ucfirst($log['severity'])) ?></span></td>
+                            </tr>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <tr><td colspan="5" class="empty-state">No technical errors have been recorded.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div class="log-pagination">
+            <span>Showing <?= $error_first ?>–<?= $error_last ?> of <?= $error_log_total ?></span>
+            <nav class="pagination" aria-label="Error log pages">
+                <?php if ($error_page > 1): ?>
+                    <a href="<?= htmlspecialchars($error_page_url($error_page - 1)) ?>">Previous</a>
+                <?php else: ?>
+                    <span aria-disabled="true">Previous</span>
+                <?php endif; ?>
+                <span>Page <?= $error_page ?> of <?= $error_page_count ?></span>
+                <?php if ($error_page < $error_page_count): ?>
+                    <a href="<?= htmlspecialchars($error_page_url($error_page + 1)) ?>">Next</a>
+                <?php else: ?>
+                    <span aria-disabled="true">Next</span>
+                <?php endif; ?>
+            </nav>
+        </div>
+    </div>
 </section>
 
-<section class="panel settings-section">
+<section class="panel settings-section settings-tab-panel" id="maintenance-panel" role="tabpanel" aria-labelledby="maintenance-tab"
+    <?= $active_tab !== 'maintenance' ? 'hidden' : '' ?>>
     <div class="settings-section-title">
-        <span class="settings-section-letter">D</span>
+        <span class="settings-section-letter">C</span>
         <div><h2>System Maintenance</h2><p>Basic maintenance and monitoring options.</p></div>
     </div>
 
@@ -335,16 +523,6 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="settings-subsection">
-        <h3>System Information</h3>
-        <div class="info-grid">
-            <div><small>Application Version</small><strong><?= htmlspecialchars($system_settings['application_version']) ?></strong></div>
-            <div><small>PHP Version</small><strong><?= htmlspecialchars(PHP_VERSION) ?></strong></div>
-            <div><small>MySQL Version</small><strong><?= htmlspecialchars($mysql_version) ?></strong></div>
-            <div><small>Time Zone</small><strong><?= htmlspecialchars($system_settings['system_timezone']) ?></strong></div>
-        </div>
-    </div>
-
-    <div class="settings-subsection">
         <h3>Maintenance Mode</h3>
         <p>When enabled, non-admin users cannot sign in or use the system. Admins retain access.</p>
         <form method="POST" class="maintenance-form">
@@ -355,28 +533,6 @@ require_once __DIR__ . '/../includes/header.php';
         </form>
     </div>
 
-    <div class="settings-subsection">
-        <h3>System Logs</h3>
-        <p>Latest 50 application activity events.</p>
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>User</th><th>Activity</th><th>Date and time</th></tr></thead>
-                <tbody>
-                    <?php if ($system_logs->num_rows > 0): ?>
-                        <?php while ($log = $system_logs->fetch_assoc()): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($log['full_name']) ?></td>
-                                <td><?= htmlspecialchars($log['action']) ?></td>
-                                <td><?= htmlspecialchars(format_system_datetime($log['created_at'], $system_settings)) ?></td>
-                            </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr><td colspan="3" class="empty-state">No system logs found.</td></tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
 </section>
 
 <style>
@@ -396,7 +552,96 @@ require_once __DIR__ . '/../includes/header.php';
 .settings-note{padding:12px;background:#f7f9fc;border-radius:8px;color:#596579}
 .maintenance-form{display:flex;gap:16px;align-items:end;flex-wrap:wrap}
 .maintenance-form label{min-width:220px}
+.settings-tabs{display:flex;gap:7px;margin:0 0 22px;overflow-x:auto;border-bottom:1px solid #dfe6ef}
+.settings-tabs [role=tab]{flex:0 0 auto;padding:12px 18px;border:0;border-bottom:2px solid transparent;border-radius:9px 9px 0 0;background:transparent;color:#66758c;font-weight:700;cursor:pointer}
+.settings-tabs [role=tab][aria-selected=true]{border-bottom-color:#2f6fdb;color:#245bb9}
+.settings-tabs [role=tab]:focus-visible{outline:2px solid #76a0e6;outline-offset:2px}
+.settings-tab-panel[hidden]{display:none}
+.settings-tab-panel{margin-bottom:20px}
+.logs-scroll{height:705px;overflow:auto}
+.logs-scroll thead th{position:sticky;top:0;z-index:1}
+.logs-scroll td{white-space:nowrap}
+.logs-scroll td.error-description{max-width:420px;overflow:hidden;text-overflow:ellipsis}
+.log-pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:14px;color:#718096;font-size:11px}
+.pagination{display:flex;align-items:center;gap:7px}
+.pagination a,.pagination>span{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:6px 10px;border:1px solid #dfe6ef;border-radius:8px;background:#fff;color:#354761;text-decoration:none}
+.pagination a:hover{border-color:#b9c9e2;background:#f5f8fc}
+.pagination>span[aria-disabled=true]{background:#f5f7fa;color:#a0aaba}
+.error-description{min-width:220px;max-width:560px;overflow-wrap:anywhere}
+.severity-low{border-color:#dfe6f0;background:#f4f6f9;color:#58677e}
+.severity-medium{border-color:#f2e2bd;background:#fff8e9;color:#94620c}
+.severity-high{border-color:#f1d2d0;background:#fff2f1;color:#a33d3a}
 @media(max-width:650px){.form-wide{grid-column:auto}.maintenance-form{display:grid}}
+@media(max-width:520px){.settings-tabs{gap:2px}.settings-tabs [role=tab]{padding:10px 11px;font-size:11px}.log-pagination{align-items:flex-start}.pagination{width:100%;justify-content:space-between}.pagination>span:nth-child(2){border:0;background:transparent}}
 </style>
+
+<script>
+(() => {
+    const tabs = Array.from(document.querySelectorAll('[data-settings-tab]'));
+    const panels = Array.from(document.querySelectorAll('.settings-tab-panel'));
+    const scrollKey = 'interntrack-settings-log-scroll';
+    const savedScroll = sessionStorage.getItem(scrollKey);
+    if (savedScroll !== null) {
+        sessionStorage.removeItem(scrollKey);
+        const scrollPosition = Number(savedScroll);
+        if (Number.isFinite(scrollPosition)) {
+            const restoreScroll = () => {
+                const previousBehavior = document.documentElement.style.scrollBehavior;
+                document.documentElement.style.scrollBehavior = 'auto';
+                window.scrollTo(0, scrollPosition);
+                document.documentElement.style.scrollBehavior = previousBehavior;
+            };
+            requestAnimationFrame(() => requestAnimationFrame(restoreScroll));
+            window.addEventListener('load', restoreScroll, { once: true });
+        }
+    }
+
+    document.querySelectorAll('.log-pagination a').forEach((link) => {
+        link.addEventListener('click', () => {
+            sessionStorage.setItem(scrollKey, String(window.scrollY));
+        });
+    });
+
+    const activate = (tab, moveFocus) => {
+        const selected = tab.dataset.settingsTab;
+        tabs.forEach((item) => {
+            const isSelected = item === tab;
+            item.setAttribute('aria-selected', String(isSelected));
+            item.tabIndex = isSelected ? 0 : -1;
+        });
+        panels.forEach((panel) => {
+            panel.hidden = panel.id !== selected + '-panel';
+        });
+        if (moveFocus) {
+            tab.focus();
+        }
+    };
+
+    tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => {
+            activate(tab, false);
+            window.history.replaceState(null, '', '?tab=' + encodeURIComponent(tab.dataset.settingsTab));
+        });
+        tab.addEventListener('keydown', (event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+                return;
+            }
+            event.preventDefault();
+            let nextIndex = index;
+            if (event.key === 'ArrowLeft') {
+                nextIndex = (index + tabs.length - 1) % tabs.length;
+            } else if (event.key === 'ArrowRight') {
+                nextIndex = (index + 1) % tabs.length;
+            } else if (event.key === 'Home') {
+                nextIndex = 0;
+            } else {
+                nextIndex = tabs.length - 1;
+            }
+            activate(tabs[nextIndex], true);
+            window.history.replaceState(null, '', '?tab=' + encodeURIComponent(tabs[nextIndex].dataset.settingsTab));
+        });
+    });
+})();
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

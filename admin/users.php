@@ -9,6 +9,7 @@ $allowed_roles = ['student', 'coordinator', 'supervisor', 'admin'];
 $allowed_statuses = ['active', 'inactive'];
 $password_minimum = max(8, (int) $system_settings['minimum_password_length']);
 $action_error = '';
+$modal_to_open = '';
 $action_notice = $_SESSION['user_action_notice'] ?? '';
 unset($_SESSION['user_action_notice']);
 
@@ -97,6 +98,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $action_error = 'Choose a valid user action.';
     }
+
+    if ($action_error !== '') {
+        if ($action === 'create') {
+            $modal_to_open = 'create-user-modal';
+        } elseif ($action === 'update' && $user_id !== false) {
+            $modal_to_open = 'edit-user-' . $user_id;
+        }
+    }
 }
 
 $search = trim($_GET['search'] ?? '');
@@ -176,9 +185,10 @@ function get_user_count(mysqli $conn, string $condition = ''): int
 }
 
 $total_users = get_user_count($conn);
+$student_users = get_user_count($conn, "role = 'student'");
+$coordinator_users = get_user_count($conn, "role = 'coordinator'");
 $active_users = get_user_count($conn, "status = 'active'");
 $inactive_users = get_user_count($conn, "status = 'inactive'");
-$coordinator_users = get_user_count($conn, "role = 'coordinator'");
 $supervisor_users = get_user_count($conn, "role = 'supervisor'");
 $admin_users = get_user_count($conn, "role = 'admin'");
 
@@ -260,7 +270,7 @@ require_once __DIR__ . '/../includes/header.php';
     }
 
     .user-stat-cards {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     @media (max-width: 900px) {
@@ -309,6 +319,22 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="stat-card">
         <div class="stat-icon">S</div>
         <div>
+            <span>Students</span>
+            <strong><?= $student_users ?></strong>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon">C</div>
+        <div>
+            <span>Coordinators</span>
+            <strong><?= $coordinator_users ?></strong>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon">S</div>
+        <div>
             <span>Supervisors</span>
             <strong><?= $supervisor_users ?></strong>
         </div>
@@ -331,15 +357,17 @@ require_once __DIR__ . '/../includes/header.php';
             <h2>User Management</h2>
             <p>View and monitor all InternTrack user accounts.</p>
         </div>
-
+        <div>
+            <button class="btn primary" type="button" data-modal-target="create-user-modal">Create user account</button>
+        </div>
     </div>
 
     <?php if ($action_notice !== ''): ?><div class="alert success"><?= htmlspecialchars($action_notice) ?></div><?php endif; ?>
     <?php if ($action_error !== ''): ?><div class="alert"><?= htmlspecialchars($action_error) ?></div><?php endif; ?>
 
-    <details class="crud-editor" open>
-        <summary>Create user account</summary>
-        <br>
+    <dialog class="modal-dialog" id="create-user-modal">
+        <div class="modal-content">
+        <div class="modal-header"><h2>Create user account</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
         <form method="POST" class="crud-form">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
             <input type="hidden" name="action" value="create">
@@ -349,8 +377,9 @@ require_once __DIR__ . '/../includes/header.php';
             <label>Temporary password<input type="password" name="password" minlength="<?= $password_minimum ?>" required autocomplete="new-password"></label>
             <button class="btn primary" type="submit">Create account</button>
         </form>
-    </details>
-    <br>
+        </div>
+    </dialog>
+
     <form method="GET" class="filter-form">
         <input
             type="text"
@@ -448,8 +477,10 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
 
                         <td>
-                            <details class="crud-editor">
-                                <summary>Edit</summary>
+                            <button class="btn secondary" type="button" data-modal-target="edit-user-<?= (int) $user['user_id'] ?>">Edit</button>
+                            <dialog class="modal-dialog" id="edit-user-<?= (int) $user['user_id'] ?>">
+                                <div class="modal-content">
+                                <div class="modal-header"><h2>Edit user account</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>
                                 <form method="POST" class="crud-form stacked">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="update">
@@ -461,7 +492,8 @@ require_once __DIR__ . '/../includes/header.php';
                                     <label>Reset password (optional)<input type="password" name="new_password" minlength="<?= $password_minimum ?>" autocomplete="new-password"></label>
                                     <button class="btn primary" type="submit">Save changes</button>
                                 </form>
-                            </details>
+                                </div>
+                            </dialog>
                         </td>
 
                     </tr>
@@ -485,5 +517,14 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 
 </section>
+
+<?php if ($modal_to_open !== ''): ?>
+<script>
+    const dialogToOpen = document.getElementById(<?= json_encode($modal_to_open) ?>);
+    if (dialogToOpen instanceof HTMLDialogElement) {
+        dialogToOpen.showModal();
+    }
+</script>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

@@ -55,7 +55,7 @@ require_login();
             <a class="<?= $current_page === 'evaluations.php' ? 'active' : '' ?>" href="/interntrack/supervisor/evaluations.php"><span class="nav-icon">☆</span>Evaluations</a>
         <?php else: ?>
             <a class="<?= $current_page === 'users.php' ? 'active' : '' ?>" href="/interntrack/admin/users.php"><span class="nav-icon">♙</span>User Management</a>
-            <a class="<?= $current_page === 'settings.php' ? 'active' : '' ?>" href="/interntrack/admin/settings.php"><span class="nav-icon">⚙</span>Settings</a>
+            <a class="<?= $current_page === 'settings.php' ? 'active' : '' ?>" href="/interntrack/admin/settings.php"><span class="nav-icon">⚙</span>Settings and Security</a>
         <?php endif; ?>
     </nav>
     <div class="sidebar-footer">
